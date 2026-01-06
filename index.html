@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>USDT&HEX&현금 P2P거래소</title>
+     <!-- 파비콘 -->
+  <link rel="icon" href="assets/img/favicon.png">   
+  <link rel="stylesheet" href="assets/css/app.css"/>
+  <link rel="stylesheet" href="/assets/css/reset.css" />
+  <link rel="stylesheet" href="/assets/css/theme.css" />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+
+  <link rel="icon" href="data:," />
+</head>
+<body>
+  <div class="page">
+    <div id="site-header"></div>
+
+    <main class="site-main">
+      <div class="main-wrap">
+        <section class="hero">
+          <div class="block-title">우리들의 Very good Exchang Token DAO</div>
+          <div class="block-text" style="margin-top:8px;">
+            USDT 또는 HEX를 KRW / VND로 안전하게 거래하세요.<br />
+            HEX 거래 시 매수자에게 거래금액의 0.5% VET 자동 보상<br />
+            HEX 거래시 수수료를 배당받을 수 있는 VET을 무료로 자동으로 받습니다.
+          </div>
+        </section>
+
+        <div class="hr"></div>
+
+        <section class="market">
+          <div class="block-title" style="font-size:20px;">매매 리스트</div>
+          <div id="tradeList" style="margin-top:10px;"></div>
+        </section>
+      </div>
+    </main>
+
+    <div id="site-footer"></div>
+  </div>
+
+  <!-- 전역 설정/partials (export 없음) -->
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/partials.js"></script>
+  <script>
+    if (window.loadPartials) window.loadPartials();
+  </script>
+
+  <!-- 페이지 스크립트: 반드시 있어야 리스트가 뜸 -->
+  <script type="module" src="/assets/js/pages/index.js"></script>
+</body>
+</html>

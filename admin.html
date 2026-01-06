@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Fees</title>
+  <link rel="stylesheet" href="/assets/css/reset.css" />
+  <link rel="stylesheet" href="/assets/css/theme.css" />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="topbar__left">
+        <a class="brand" href="/index.html">
+          <img src="/assets/img/logo.svg" alt="HEX DAO" class="brand__logo" />
+          <span class="brand__name">Admin</span>
+        </a>
+      </div>
+      <div class="topbar__right">
+        <button class="btn secondary" id="btnConnect">지갑 연결</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="row row-between">
+          <div>
+            <div class="h2">USDT 수수료</div>
+            <div class="muted">컨트랙트에 누적된 pendingUsdtFee 를 전액 이체합니다.</div>
+          </div>
+          <div class="pill" id="netPill">opBNB</div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="grid2">
+          <div class="box">
+            <div class="label">pendingUsdtFee (raw)</div>
+            <div class="value" id="pendingRaw">-</div>
+            <div class="hint">USDT 최소단위(wei). 전액 이체는 이 값을 그대로 사용합니다.</div>
+          </div>
+
+          <div class="box">
+            <div class="label">내 지갑</div>
+            <div class="value mono" id="myAddr">-</div>
+            <div class="hint">owner 지갑으로 실행해야 성공합니다.</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="form">
+          <label class="label" for="toAddr">출금(이체) 주소</label>
+          <input class="input mono" id="toAddr" placeholder="0x..." />
+
+          <div class="row row-between" style="margin-top:12px;">
+            <button class="btn secondary" id="btnRefresh">새로고침</button>
+            <button class="btn" id="btnWithdrawAll">수수료 전액 이체</button>
+          </div>
+
+          <div class="note" id="note" style="margin-top:12px;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/assets/js/pages/admin.js"></script>
+</body>
+</html>

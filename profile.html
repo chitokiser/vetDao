@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <title>프로필 · 판매자 연락처 관리 - VET DAO</title>
+
+  <!-- 공통 head 로드 -->
+  <script type="module">
+    fetch("/partials/head.html")
+      .then(r => r.text())
+      .then(html => document.head.insertAdjacentHTML("beforeend", html))
+      .catch(() => {});
+  </script>
+</head>
+<body>
+
+  <!-- 헤더 -->
+  <div id="site-header"></div>
+
+  <!-- 메인 -->
+  <main class="site-main">
+    <div class="container">
+
+      <section class="hero">
+        <h1>프로필 / 판매자 연락처</h1>
+        <p class="hero-desc">
+          판매자는 <b>카카오톡 또는 텔레그램 ID를 1회 등록</b>해야 판매 등록이 가능합니다.<br />
+          등록 후에는 언제든지 수정할 수 있습니다.
+        </p>
+      </section>
+
+      <section class="card" style="max-width:720px;">
+
+        <!-- 지갑 정보 -->
+        <div class="grid2">
+          <div>
+            <div class="label">내 지갑 주소</div>
+            <div class="value mono" id="myAddr">-</div>
+          </div>
+          <div>
+            <div class="label">등록 상태</div>
+            <div class="value" id="status">미연결</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <!-- 연락처 입력 -->
+        <div class="grid2">
+          <div>
+            <div class="label">카카오톡 ID</div>
+            <input
+              id="kakaoId"
+              class="input"
+              type="text"
+              placeholder="예: chito54"
+            />
+          </div>
+
+          <div>
+            <div class="label">텔레그램 ID</div>
+            <input
+              id="telegramId"
+              class="input"
+              type="text"
+              placeholder="예: @yourid"
+            />
+          </div>
+        </div>
+
+        <div class="hint" style="margin-top:8px;">
+          · 둘 중 하나만 입력해도 됩니다<br />
+          · 연락처는 매매 페이지에서 공개됩니다
+        </div>
+
+        <div class="hr"></div>
+
+        <!-- 버튼 -->
+        <div class="row row-between">
+          <div>
+            <button class="btn secondary" id="btnConnect">지갑 연결</button>
+          </div>
+          <div>
+            <button class="btn" id="btnSave">연락처 등록</button>
+          </div>
+        </div>
+
+        <!-- 상태 메시지 -->
+        <div id="note" class="note" style="margin-top:12px;"></div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- 푸터 -->
+  <div id="site-footer"></div>
+
+  <!-- partials 로드 -->
+<script src="/assets/js/config.js"></script>
+<script src="/assets/js/partials.js"></script>
+<script>
+  if (window.loadPartials) window.loadPartials();
+</script>
+
+
+</body>
+</html>

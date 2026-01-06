@@ -1,0 +1,206 @@
+<!-- /partials/footer.html -->
+<!-- NOTE:
+  - Font Awesome CSS는 footer.html 안에 넣지 말고 head.html(공통 head)로 옮기는 것을 권장합니다.
+  - 그래도 일단 “footer만 붙여도 동작”하게 하려면 아래처럼 footer 안에 둬도 됩니다.
+-->
+
+<link
+  rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+/>
+
+<style>
+  .footer-wrap{
+    margin-top:38px;
+    border-top:1px solid var(--line2);
+    background: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.00));
+  }
+  .footer-inner{
+    max-width:1100px;
+    margin:0 auto;
+    padding:22px 18px;
+  }
+
+  /* 상단 영역: 로고/문구 + 링크 */
+  .footer-top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+
+  .footer-left{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:260px;
+  }
+
+  .footer-logo{
+    width:40px;
+    height:40px;
+    border-radius:12px;
+    border:1px solid rgba(0,0,0,.12);
+    background:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+    flex:0 0 auto;
+  }
+  .footer-logo img{
+    width:78%;
+    height:auto;
+    display:block;
+  }
+
+  .footer-brand{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+  }
+  .footer-title{
+    font-size:14px;
+    font-weight:900;
+    letter-spacing:.2px;
+    line-height:1.2;
+  }
+  .footer-sub{
+    font-size:12px;
+    color:var(--muted);
+    line-height:1.4;
+    max-width:520px;
+  }
+
+  /* 링크 영역 */
+  .footer-links{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:flex-end;
+  }
+
+  .footer-links a{
+    text-decoration:none;
+    color:#111;
+    font-size:12px;
+    border:1px solid rgba(0,0,0,.12);
+    background:rgba(255,255,255,.9);
+    padding:8px 10px;
+    border-radius:12px;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    transition: transform .08s ease, background .12s ease;
+    white-space:nowrap;
+  }
+  .footer-links a:hover{
+    transform: translateY(-1px);
+    background:#fff;
+  }
+
+  .footer-links a i{
+    font-size:14px;
+  }
+
+  /* 강조 버튼(공식커뮤니티) */
+  .footer-links a.footer-cta{
+    border-color: rgba(0,0,0,.22);
+    background: linear-gradient(180deg, rgba(0,0,0,.04), rgba(0,0,0,.01));
+  }
+
+  /* 구분선 + 카피 */
+  .footer-bottom{
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px dashed rgba(0,0,0,.12);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .footer-copy{
+    font-size:12px;
+    color:var(--muted);
+  }
+  .footer-mini{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--muted);
+    font-size:12px;
+  }
+  .footer-dot{
+    width:4px;height:4px;border-radius:999px;background:rgba(0,0,0,.25);
+    display:inline-block;
+  }
+
+  @media (max-width:720px){
+    .footer-links{justify-content:flex-start}
+    .footer-bottom{justify-content:flex-start}
+    .footer-left{min-width:auto}
+  }
+</style>
+
+<div class="footer-wrap">
+  <div class="footer-inner">
+
+    <div class="footer-top">
+      <div class="footer-left">
+        <div class="footer-logo" aria-hidden="true">
+          <!-- HEXDAO 로고 경로 -->
+          <img src="assets/images/tokens/hut.png" alt="HEX DAO 로고">
+        </div>
+
+        <div class="footer-brand">
+          <div class="footer-title">HEX DAO</div>
+          <div class="footer-sub">실물 사업을 Web3로 자동 증폭시키는 금융·운영 플랫폼</div>
+        </div>
+      </div>
+
+      <div class="footer-links">
+        <a href="intro.html">
+          <i class="fa-solid fa-circle-info"></i>
+          소개
+        </a>
+
+        <!-- 백서 -->
+        <a href="/assets/docs/HEX%20DAO%20WHITEPAPER%20v1.pdf" target="_blank" rel="noreferrer">
+          <i class="fa-solid fa-file-lines"></i>
+          백서(PDF)
+        </a>
+
+        <a href="https://github.com/chitokiser/hexdao/" target="_blank" rel="noreferrer">
+          <i class="fa-brands fa-github"></i>
+          Github
+        </a>
+
+        <!-- Facebook 공식 커뮤니티 -->
+        <a
+          href="https://www.facebook.com/groups/1453946632758823"
+          target="_blank"
+          rel="noreferrer"
+          class="footer-cta"
+          aria-label="HEX DAO Facebook 공식 커뮤니티"
+        >
+          <i class="fa-brands fa-facebook"></i>
+          공식커뮤니티
+        </a>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="footer-mini">
+        <span>Dual Listing</span><span class="footer-dot"></span>
+        <span>PancakeSwap + HEXDAO DEX</span><span class="footer-dot"></span>
+        <span>CoinGecko → CEX 확장</span>
+      </div>
+
+      <div class="footer-copy">© 2025 HEXDAO. All rights reserved.</div>
+    </div>
+
+  </div>
+</div>

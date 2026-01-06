@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 공개로 보여줄 것들만 read 허용
+    match /trades/{tradeId} {
+      allow read: if true;
+      allow write: if false; // 직접 수정 금지 (서버로만)
+    }
+
+    match /profiles/{address} {
+      allow read: if true;   // 판매자 연락처는 누구나 볼 수 있게
+      allow write: if false; // 직접 수정 금지 (서버로만)
+    }
+
+    // 나머지 전부 차단
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VET DAO - 판매등록</title>
+
+  <link rel="stylesheet" href="/assets/css/reset.css" />
+  <link rel="stylesheet" href="/assets/css/theme.css" />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+  <link rel="icon" href="data:," />
+
+  <style>
+    .debug-box{
+      margin-top:12px;
+      padding:12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:rgba(0,0,0,0.18);
+      color:var(--muted);
+      font-size:12px;
+      white-space:pre-wrap;
+    }
+    input, select {
+      width:100%;
+      padding:12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,0.06);
+      color:var(--text);
+      outline:none;
+    }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .row1 { display:grid; grid-template-columns:1fr; gap:10px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div id="site-header"></div>
+
+    <main class="site-main">
+      <div class="main-wrap">
+        <div class="block-title">판매등록</div>
+        <div class="block-text" style="margin-top:6px;">
+          HEX 또는 USDT를 에스크로에 예치하고, KRW/VND 오프체인 결제를 받는 거래를 등록합니다.
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+            <div>
+              <div class="k">지갑 상태</div>
+              <div class="v mono" id="walletLine">미연결</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn" id="btnConnect">지갑 연결</button>
+              <button class="btn" id="btnSubmit">판매등록</button>
+            </div>
+          </div>
+
+          <div id="note" class="note" style="margin-top:10px; display:none;"></div>
+        </div>
+
+        <div class="card" style="margin-top:12px;">
+          <div class="row">
+            <div>
+              <div class="k">토큰</div>
+              <select id="token">
+                <option value="HEX">HEX</option>
+                <option value="USDT">USDT</option>
+              </select>
+            </div>
+            <div>
+              <div class="k">결제통화</div>
+              <select id="fiat">
+                <option value="KRW">KRW</option>
+                <option value="VND">VND</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <div class="k">판매 수량</div>
+              <input id="amount" placeholder="예: 10" inputmode="decimal" />
+            </div>
+            <div>
+              <div class="k">개당 가격</div>
+              <input id="unitPrice" placeholder="예: 1200" inputmode="decimal" />
+            </div>
+          </div>
+
+          <div class="row1" style="margin-top:10px;">
+            <div>
+              <div class="k">리스트 표시용 seller SNS (선택)</div>
+              <input id="sellerSns" placeholder="예: kakao: chito54 / tg: @id" />
+            </div>
+          </div>
+
+          <div style="margin-top:10px; color:var(--muted); font-size:13px;">
+            예상 총액: <span id="totalFiat">-</span>
+          </div>
+        </div>
+
+        <div class="debug-box" id="debug">debug: page loaded</div>
+      </div>
+    </main>
+
+    <div id="site-footer"></div>
+  </div>
+
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/partials.js"></script>
+  <script>
+    // 화면에 안 뜨는 문제를 막기 위한 전역 디버그
+    (function(){
+      const dbg = (msg) => {
+        const el = document.getElementById("debug");
+        if (el) el.textContent += "\n" + msg;
+        console.log(msg);
+      };
+      window.__dbg = dbg;
+
+      window.addEventListener("error", (ev) => {
+        dbg("window.error: " + ev.message);
+      });
+      window.addEventListener("unhandledrejection", (ev) => {
+        const r = ev.reason;
+        dbg("unhandledrejection: " + (r?.message || String(r)));
+      });
+
+      if (window.loadPartials) window.loadPartials();
+      dbg("partials loaded call done");
+    })();
+  </script>
+
+  <!-- 중요: sell.js는 반드시 type="module" 로드 -->
+  <script type="module" src="/assets/js/pages/sell.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<header class="top-header" style="padding:18px 18px 10px 18px;">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+    <div style="flex:1; min-width:0;">
+      <!-- 로고 + (데스크탑) 메뉴 + (모바일) 햄버거 -->
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div style="display:flex; align-items:center; gap:18px; min-width:0;">
+          <a href="index.html" style="display:inline-flex; align-items:center;">
+            <img
+              src="assets/img/vet.png"
+              alt="VET DAO"
+              style="height:34px; display:block;"
+            />
+          </a>
+
+      <nav style="display:flex; gap:16px; font-size:14px; margin-left:18px;">
+        <a href="/index.html" style="text-decoration:none; color:var(--muted);">거래소</a>
+        <a href="/sell.html" style="text-decoration:none; color:var(--muted);">판매등록</a>
+        <a href="/profile.html" style="text-decoration:none; color:var(--muted);">프로필</a>
+        <a href="/admin.html" style="text-decoration:none; color:var(--muted);">관리자</a>
+      </nav>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div id="hdrBalances" class="pill" style="display:none; gap:12px; align-items:center;">
+        <span id="hdrAddr" class="mono" style="font-size:12px;"></span>
+        <span style="width:1px;height:14px;background:var(--line);display:inline-block;"></span>
+        <span style="font-size:12px; color:var(--muted);">HEX</span>
+        <span id="hdrHex" class="mono" style="font-size:12px; color:var(--text);">-</span>
+        <span style="font-size:12px; color:var(--muted);">USDT</span>
+        <span id="hdrUsdt" class="mono" style="font-size:12px; color:var(--text);">-</span>
+      </div>
+
+      <button class="btn" id="hdrConnect">지갑 연결</button>
+    </div>
+  </div>
+
+  <div id="hdrNote" class="note" style="display:none; margin-top:10px;"></div>
+</header>
