@@ -3,16 +3,18 @@
 const ethers = window.ethers;
 
 const USDT_ADDRESS = "0x9e5aac1ba1a2e6aed6b32689dfcf62a509ca96f3";
-const HEX_ADDRESS  = "0x41F2Ea9F4eF7c4E35ba1a8438fC80937eD4E5464";
+const HEX_ADDRESS  = "0x41F2Ea9F4eF7c4E35ba1a8438fC80937eD4E5464"; // ✅ FIX: 원래 HEX 주소
 const VET_ADDRESS  = "0xff8eCA08F731EAe46b5e7d10eBF640A8Ca7BA3D4";
 
 const ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
-  "function decimals() view returns (uint8)"
+  "function decimals() view returns (uint8)",
 ];
 
 const VETEX_READ_ABI = [
-  "function nextTradeId() view returns (uint256)"
+  "function nextTradeId() view returns (uint256)",
+  "function pendingUsdtFee() view returns (uint256)",
+  "function pendingHexFee() view returns (uint256)",
 ];
 
 let provider = null;
@@ -64,6 +66,10 @@ function els() {
     dashNextId: document.getElementById("hdrDashNextId"),
     dashRpc: document.getElementById("hdrDashRpc"),
     dashUpdated: document.getElementById("hdrDashUpdated"),
+
+    // pending fee fields (header.html에 id가 있어야 표시됨)
+    dashPendingUsdt: document.getElementById("hdrDashPendingUsdt"),
+    dashPendingHex: document.getElementById("hdrDashPendingHex"),
 
     hdrNote: document.getElementById("hdrNote"),
   };
@@ -197,7 +203,7 @@ async function loadWalletBalances() {
   const rp = ensureReadProvider() || provider;
 
   const hexDec  = await readDecimalsSafe(rp, HEX_ADDRESS,  window.CONFIG?.TOKENS?.HEX?.decimals ?? 18);
-  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 18);
+  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 6);
   const vetDec  = await readDecimalsSafe(rp, VET_ADDRESS,  window.CONFIG?.TOKENS?.VET?.decimals ?? 0);
 
   const [hexBal, usdtBal, vetBal] = await Promise.all([
@@ -216,11 +222,15 @@ async function loadWalletBalances() {
 async function loadContractDashboard() {
   const {
     dashContract, dashCxHex, dashCxUsdt, dashCxVet,
-    dashTrades, dashNextId, dashRpc, dashUpdated
+    dashTrades, dashNextId, dashRpc, dashUpdated,
+    dashPendingUsdt, dashPendingHex
   } = els();
 
   const vetEx = getVetExAddress();
+
+  // ✅ 계약/대시보드 온체인 읽기는 readProvider 고정 (안정성)
   const rp = ensureReadProvider();
+
   const rpcUrl = window.CONFIG?.RPC_URL || "-";
   if (dashRpc) dashRpc.textContent = rpcUrl;
 
@@ -231,14 +241,30 @@ async function loadContractDashboard() {
     if (dashCxVet) dashCxVet.textContent = "-";
     if (dashTrades) dashTrades.textContent = "-";
     if (dashNextId) dashNextId.textContent = "-";
+    if (dashPendingUsdt) dashPendingUsdt.textContent = "-";
+    if (dashPendingHex) dashPendingHex.textContent = "-";
     if (dashUpdated) dashUpdated.textContent = nowLabel();
     return;
   }
 
   if (dashContract) dashContract.textContent = shortAddr(vetEx);
 
+  // 계약주소가 실제 컨트랙트인지 먼저 확인 (0이면 주소가 잘못되었을 가능성 큼)
+  const isVetExContract = await isContract(rp, vetEx);
+  if (!isVetExContract) {
+    if (dashCxHex) dashCxHex.textContent = "주소오류";
+    if (dashCxUsdt) dashCxUsdt.textContent = "주소오류";
+    if (dashCxVet) dashCxVet.textContent = "주소오류";
+    if (dashTrades) dashTrades.textContent = "-";
+    if (dashNextId) dashNextId.textContent = "-";
+    if (dashPendingUsdt) dashPendingUsdt.textContent = "-";
+    if (dashPendingHex) dashPendingHex.textContent = "-";
+    if (dashUpdated) dashUpdated.textContent = nowLabel();
+    return;
+  }
+
   const hexDec  = await readDecimalsSafe(rp, HEX_ADDRESS,  window.CONFIG?.TOKENS?.HEX?.decimals ?? 18);
-  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 18);
+  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 6);
   const vetDec  = await readDecimalsSafe(rp, VET_ADDRESS,  window.CONFIG?.TOKENS?.VET?.decimals ?? 0);
 
   const [cxHexBal, cxUsdtBal, cxVetBal] = await Promise.all([
@@ -252,11 +278,23 @@ async function loadContractDashboard() {
   if (dashCxVet) { dashCxVet.textContent = fmtUnitsSafe(cxVetBal, vetDec, 4); markOnchain(dashCxVet); }
 
   let nextId = null;
+  let pendingUsdt = null;
+  let pendingHex = null;
+
   try {
     const ex = new ethers.Contract(vetEx, VETEX_READ_ABI, rp);
-    nextId = await ex.nextTradeId();
+    const [nid, pusdt, phex] = await Promise.all([
+      ex.nextTradeId(),
+      ex.pendingUsdtFee(),
+      ex.pendingHexFee(),
+    ]);
+    nextId = nid;
+    pendingUsdt = pusdt;
+    pendingHex = phex;
   } catch {
     nextId = null;
+    pendingUsdt = null;
+    pendingHex = null;
   }
 
   const nid = Number(nextId ?? 0);
@@ -264,6 +302,10 @@ async function loadContractDashboard() {
 
   if (dashNextId) { dashNextId.textContent = String(Number.isFinite(nid) ? nid : "-"); markOnchain(dashNextId); }
   if (dashTrades) { dashTrades.textContent = tradeCount.toLocaleString(); markOnchain(dashTrades); }
+
+  // pending fees 표시 (USDT 6, HEX 18)
+  if (dashPendingUsdt) { dashPendingUsdt.textContent = fmtUnitsSafe(pendingUsdt ?? 0n, 6, 2); markOnchain(dashPendingUsdt); }
+  if (dashPendingHex) { dashPendingHex.textContent = fmtUnitsSafe(pendingHex ?? 0n, 18, 4); markOnchain(dashPendingHex); }
 
   if (dashUpdated) dashUpdated.textContent = nowLabel();
 }
@@ -341,14 +383,13 @@ async function connectWallet() {
   }
 }
 
-/* ====== UI 토글을 여기서 전담 (partials 주입되어도 100% 동작) ====== */
+/* UI 토글 */
 function bindHeaderUiOnce() {
   if (boundUi) return;
 
   const { burger, menu, dashBtn, dash, dashClose } = els();
   if (!burger || !menu || !dashBtn || !dash) return;
 
-  // burger
   const closeMenu = () => { menu.classList.remove("open"); burger.setAttribute("aria-expanded","false"); };
   burger.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -362,7 +403,6 @@ function bindHeaderUiOnce() {
   document.addEventListener("click", () => closeMenu());
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 
-  // dash
   const openDash = () => {
     dash.classList.add("open");
     dashBtn.setAttribute("aria-expanded","true");
