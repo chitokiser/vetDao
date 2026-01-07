@@ -131,14 +131,27 @@
     .hdr-dash-body{
       padding:14px;
       display:grid;
-      grid-template-columns: 1.1fr 0.9fr;
+      grid-template-columns: 1fr 1fr; /* 좌/우 균등 */
       gap:14px;
+      align-items:start;
     }
+
     .hdr-dash-col{
       display:flex;
       flex-direction:column;
       gap:12px;
       min-width:0;
+    }
+
+    /* 우측 컬럼을 2열 카드 그리드로: 빈 공간 줄이기 */
+    .hdr-dash-col-right{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+      align-content:start;
+    }
+    .hdr-span-2{
+      grid-column: 1 / span 2;
     }
 
     .hdr-card{
@@ -176,6 +189,9 @@
       display:grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap:10px;
+    }
+    .hdr-metrics.two{
+      grid-template-columns: 1fr 1fr;
     }
     .hdr-metric{
       border:1px solid rgba(255,255,255,0.10);
@@ -219,16 +235,24 @@
       max-width: 100%;
     }
 
+    @media (max-width: 920px){
+      .hdr-dash-body{ grid-template-columns: 1fr; }
+      .hdr-dash-col-right{ grid-template-columns: 1fr; }
+      .hdr-span-2{ grid-column: auto; }
+      .hdr-metrics{ grid-template-columns: 1fr 1fr; }
+      .hdr-metrics.two{ grid-template-columns: 1fr 1fr; }
+    }
+
     @media (max-width: 820px){
       .hdr-nav{ display:none; }
       .hdr-burger{ display:inline-flex; }
       #hdrBalances{ display:none !important; }
-      .hdr-dash-body{ grid-template-columns: 1fr; }
-      .hdr-metrics{ grid-template-columns: 1fr 1fr; }
     }
+
     @media (max-width: 420px){
       .hdr-left{ gap:12px; }
       .hdr-metrics{ grid-template-columns: 1fr; }
+      .hdr-metrics.two{ grid-template-columns: 1fr; }
     }
   </style>
 
@@ -351,26 +375,10 @@
                   </div>
                 </div>
               </div>
-      <div class="hdr-card">
-  <div class="hdr-card-h">
-    <div class="hdr-card-t">미정산 수수료 (Pending Fee)</div>
-    <span class="hdr-chip">컨트랙트 변수</span>
-  </div>
 
-  <div class="hdr-metrics">
-    <div class="hdr-metric">
-      <div class="hdr-mk">USDT Fee</div>
-      <div class="hdr-mv onchain" id="hdrDashPendingUsdt">-</div>
-    </div>
-    <div class="hdr-metric">
-      <div class="hdr-mk">HEX Fee</div>
-      <div class="hdr-mv onchain" id="hdrDashPendingHex">-</div>
-    </div>
-  </div>
-</div>
             </div>
 
-            <div class="hdr-dash-col">
+            <div class="hdr-dash-col hdr-dash-col-right">
               <div class="hdr-card">
                 <div class="hdr-card-h">
                   <div class="hdr-card-t">등록/상태</div>
@@ -394,6 +402,24 @@
               </div>
 
               <div class="hdr-card">
+                <div class="hdr-card-h">
+                  <div class="hdr-card-t">미정산 수수료 (Pending Fee)</div>
+                  <span class="hdr-chip">컨트랙트 변수</span>
+                </div>
+
+                <div class="hdr-metrics two">
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">USDT Fee</div>
+                    <div class="hdr-mv onchain" id="hdrDashPendingUsdt">-</div>
+                  </div>
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">HEX Fee</div>
+                    <div class="hdr-mv onchain" id="hdrDashPendingHex">-</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hdr-card hdr-span-2">
                 <div class="hdr-card-h">
                   <div class="hdr-card-t">빠른 작업</div>
                   <span class="hdr-chip">바로가기</span>

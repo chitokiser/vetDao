@@ -582,8 +582,30 @@ async function loadTrade(tradeId) {
   setText("vBuyer", buyer && buyer !== ethers.ZeroAddress ? String(buyer) : "-");
 
   // seller SNS: meta 우선
+  // seller SNS: meta 우선
   let sellerSns = meta?.sellerSns || "-";
-  // getSellerContact는 vetEX ABI에 없을 수 있음 → 안전하게 try
+
+  // 1) Firestore users/{seller} 에서 kakao/telegram 읽기 (프로필에서 저장한 값)
+  try {
+    if ((sellerSns === "-" || !sellerSns) && db && seller) {
+      const uref = doc(db, "users", String(seller).toLowerCase());
+      const usnap = await getDoc(uref);
+      if (usnap.exists()) {
+        const ud = usnap.data() || {};
+        const kk = (ud.kakaoId || "").trim();
+        const tg = (ud.telegramId || "").trim();
+        const join = [
+          kk ? `kakao: ${kk}` : "",
+          tg ? `tg: ${tg}` : ""
+        ].filter(Boolean).join(" / ");
+        if (join) sellerSns = join;
+      }
+    }
+  } catch (e) {
+    console.warn("seller sns(users) load fail:", e);
+  }
+
+  // 2) (옵션) 온체인 getSellerContact가 있으면 그 값으로 덮어쓰기
   try {
     if (typeof c.getSellerContact === "function") {
       const [kakaoId, telegramId, registered] = await c.getSellerContact(seller);
@@ -595,11 +617,14 @@ async function loadTrade(tradeId) {
       }
     }
   } catch {}
+
   setText("vSellerSns", sellerSns);
+
 
   if ($("vVetBadge")) {
     setHTML("vVetBadge", sym === "HEX" ? `<span class="badge">매수자에게 VET 보상</span>` : `-`);
   }
+
 
   renderStatusBar({ seller, buyer, status }, account);
   renderStepInfoText({ status }, account);
@@ -610,7 +635,6 @@ async function loadTrade(tradeId) {
     on: { seller, buyer, token, amount, fiatAmount, paymentRef, fiat, status, dec, sym },
   };
 }
-
 // ----------------------------
 // 액션
 // ----------------------------

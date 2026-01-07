@@ -241,9 +241,9 @@ async function loadContractDashboard() {
     if (dashCxVet) dashCxVet.textContent = "-";
     if (dashTrades) dashTrades.textContent = "-";
     if (dashNextId) dashNextId.textContent = "-";
-    if (dashPendingUsdt) dashPendingUsdt.textContent = "-";
-    if (dashPendingHex) dashPendingHex.textContent = "-";
-    if (dashUpdated) dashUpdated.textContent = nowLabel();
+  if (dashPendingUsdt) { dashPendingUsdt.textContent = fmtUnitsSafe(pendingUsdt ?? 0n, 18, 4); markOnchain(dashPendingUsdt); }
+  if (dashPendingHex)  { dashPendingHex.textContent  = fmtUnitsSafe(pendingHex  ?? 0n, 18, 4); markOnchain(dashPendingHex); }
+  if (dashUpdated) dashUpdated.textContent = nowLabel();
     return;
   }
 

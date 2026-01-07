@@ -51,15 +51,7 @@ function fmtFiat(fiatCode) {
 
 function fmtStatusKo(s) {
   // 0=OPEN,1=TAKEN,2=PAID,3=RELEASED,4=CANCELED,5=DISPUTED,6=RESOLVED
-  const map = [
-    "판매중",
-    "거래수락",
-    "입금완료",
-    "이체완료",
-    "취소",
-    "분쟁중",
-    "분쟁해결",
-  ];
+  const map = ["판매중", "거래수락", "입금완료", "이체완료", "취소", "분쟁중", "분쟁해결"];
   const n = Number(s);
   if (Number.isFinite(n) && map[n]) return map[n];
   return "-";
@@ -90,39 +82,34 @@ function calcTotalFiat(amount, unitPrice) {
   return a * p;
 }
 
-function tradesCollectionName() {
+function tradesCollectionNameByContract() {
   const addr = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
   if (!addr) return "trades";
   return "trades_" + addr;
 }
 
-// Firestore 항목의 status가 비어있으면 체인에서 보강
-async function enrichStatusesFromChain(items) {
+/*
+  ✅ 변경 1: 상태는 "비어있을 때만"이 아니라,
+  Firestore에 뭐가 들어있든 최근 N개는 온체인 status로 항상 덮어쓴다.
+*/
+async function overrideStatusesFromChain(items, max = 30) {
   if (!ethers || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX) return items;
   if (!ABI?.length) return items;
-
-  const need = items.filter((t) => {
-    const s = t?.status;
-    if (s === undefined || s === null) return true;
-    const ss = String(s).trim();
-    return ss === "" || ss === "-" || ss === "null" || ss === "undefined";
-  });
-  if (need.length === 0) return items;
+  if (!Array.isArray(items) || items.length === 0) return items;
 
   const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
   const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
 
-  const max = Math.min(need.length, 30);
-  for (let i = 0; i < max; i++) {
-    const t = need[i];
+  const target = items.slice(0, Math.min(max, items.length));
+
+  for (const t of target) {
     const id = Number(t.tradeId);
     if (!Number.isFinite(id) || id <= 0) continue;
-
     try {
       const on = await c.getTrade(id);
       t.status = Number(on.status);
     } catch (e) {
-      console.warn("status enrich failed:", id, e);
+      console.warn("status override failed:", id, e);
     }
   }
   return items;
@@ -134,7 +121,7 @@ function renderTrades(items, sourceLabel) {
 
   tradeList.appendChild(
     el("div", { class: "muted", style: "margin-bottom:8px; font-size:12px;" }, [
-      `표시 기준: ${sourceLabel}`
+      `표시 기준: ${sourceLabel}`,
     ])
   );
 
@@ -164,8 +151,7 @@ function renderTrades(items, sourceLabel) {
 
     const statusKo = fmtStatusKo(t.status);
 
-    const line1 =
-      `판매토큰: ${tokenSymbol} / 판매개수: ${amountText} / 판매금액: ${totalFiatText} / 진행상태: ${statusKo}`;
+    const line1 = `판매토큰: ${tokenSymbol} / 판매개수: ${amountText} / 판매금액: ${totalFiatText} / 진행상태: ${statusKo}`;
 
     const unitPriceText =
       t.unitPrice !== undefined && t.unitPrice !== null && t.unitPrice !== ""
@@ -175,29 +161,74 @@ function renderTrades(items, sourceLabel) {
     const line2 = `판매자: ${seller} · 단가: ${unitPriceText}`;
 
     const card = el("div", { class: "card", style: "margin-top:10px;" }, [
-      el("div", { class: "card-inner", style: "display:flex; justify-content:space-between; gap:12px; align-items:center;" }, [
-        el("div", {}, [
-          el("div", { class: "k", style: "font-size:13px; color:var(--muted);" }, [`tradeId #${tradeId}`]),
-          el("div", { class: "v onchain", style: "font-size:15px; margin-top:2px; line-height:1.35;" }, [line1]),
-          el("div", { class: "muted", style: "font-size:12px; margin-top:6px;" }, [line2]),
-        ]),
-        el("a", { class: "btn", href: `/trade.html?id=${encodeURIComponent(tradeId)}` }, ["상세보기"])
-      ])
+      el(
+        "div",
+        { class: "card-inner", style: "display:flex; justify-content:space-between; gap:12px; align-items:center;" },
+        [
+          el("div", {}, [
+            el("div", { class: "k", style: "font-size:13px; color:var(--muted);" }, [`tradeId #${tradeId}`]),
+            el("div", { class: "v onchain", style: "font-size:15px; margin-top:2px; line-height:1.35;" }, [line1]),
+            el("div", { class: "muted", style: "font-size:12px; margin-top:6px;" }, [line2]),
+          ]),
+          el("a", { class: "btn", href: `/trade.html?id=${encodeURIComponent(tradeId)}` }, ["상세보기"]),
+        ]
+      ),
     ]);
 
     tradeList.appendChild(card);
   }
 }
 
-async function loadFromFirestore() {
-  if (!db) return [];
-  const col = tradesCollectionName();
-  const q = query(collection(db, col), orderBy("tradeId", "desc"), limit(30));
-  const snap = await getDocs(q);
+/*
+  ✅ 변경 2: Firestore는 trades + trades_{컨트랙트} 둘 다 읽어서 합친다.
+  (중복 tradeId는 1개로 유지)
+  => 누가 접속하든 리스트가 동일하게 보임
+*/
+async function loadFromFirestoreAll() {
+  if (!db) return { items: [], sources: [] };
 
-  const items = [];
-  snap.forEach((docu) => items.push(docu.data()));
-  return { items, col };
+  const cols = [];
+  cols.push("trades");
+  const byContract = tradesCollectionNameByContract();
+  if (byContract && byContract !== "trades") cols.push(byContract);
+
+  const sources = [];
+
+  const results = await Promise.allSettled(
+    cols.map(async (colName) => {
+      const q = query(collection(db, colName), orderBy("tradeId", "desc"), limit(60));
+      const snap = await getDocs(q);
+      const arr = [];
+      snap.forEach((d) => arr.push({ ...d.data(), __col: colName }));
+      sources.push(colName);
+      return arr;
+    })
+  );
+
+  const merged = new Map(); // tradeId -> doc
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    for (const item of r.value) {
+      const id = Number(item.tradeId);
+      if (!Number.isFinite(id) || id <= 0) continue;
+
+      // 동일 tradeId가 두 컬렉션에 있으면 "updatedAt"이 더 최신인 걸 우선(없으면 기존 유지)
+      const prev = merged.get(id);
+      if (!prev) {
+        merged.set(id, item);
+        continue;
+      }
+
+      const p = prev?.updatedAt?.toMillis ? prev.updatedAt.toMillis() : Number(prev?.updatedAt || 0);
+      const n = item?.updatedAt?.toMillis ? item.updatedAt.toMillis() : Number(item?.updatedAt || 0);
+      if (Number.isFinite(n) && n >= (Number.isFinite(p) ? p : 0)) {
+        merged.set(id, item);
+      }
+    }
+  }
+
+  const items = Array.from(merged.values()).sort((a, b) => Number(b.tradeId) - Number(a.tradeId));
+  return { items, sources };
 }
 
 // 체인 fallback: 최근 tradeId를 getTrade로 직접 조회
@@ -209,10 +240,7 @@ async function loadFromChainByStorage() {
   const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
 
   const decCache = new Map();
-  const ERC20_ABI = [
-    "function decimals() view returns (uint8)",
-    "function symbol() view returns (string)"
-  ];
+  const ERC20_ABI = ["function decimals() view returns (uint8)"];
 
   async function getDecimals(tokenAddr) {
     const key = (tokenAddr || "").toLowerCase();
@@ -290,12 +318,13 @@ async function loadFromChainByStorage() {
 async function boot() {
   if (!tradeList) return;
 
-  // 1) Firestore 우선 (컨트랙트별 컬렉션)
+  // 1) Firestore(전체) 우선: trades + trades_{contract} 병합
   try {
-    const { items: fsItems, col } = await loadFromFirestore();
+    const { items: fsItems, sources } = await loadFromFirestoreAll();
     if (fsItems.length > 0) {
-      await enrichStatusesFromChain(fsItems);
-      renderTrades(fsItems, `Firestore(${col}) + onchain status`);
+      // 표시 상태는 항상 온체인을 우선
+      await overrideStatusesFromChain(fsItems, 30);
+      renderTrades(fsItems.slice(0, 30), `Firestore(${sources.join(",")}) + onchain(status override)`);
       return;
     }
   } catch (e) {
