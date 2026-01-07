@@ -302,3 +302,47 @@ select.input optgroup {
 
 /* 보조 텍스트 가독성 */
 .hint, .note, .muted { line-height: 1.5; }
+/* ===== 지갑주소/어카운트 말줄임 + 프레임 밖 튐 방지 ===== */
+.wallet-pill, .account-pill, .hdr-account, #walletAddr, #account, .wallet-addr{
+  display:inline-flex;
+  align-items:center;
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* 지갑주소 텍스트가 span으로 분리되어 있으면 이걸 추가 */
+.wallet-pill span, .account-pill span, .hdr-account span, .wallet-addr span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+/* ===== 모바일 우측 밀림(가로 스크롤) 방지 기본셋 ===== */
+html, body{
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden; /* 가장 강력 */
+}
+
+*, *::before, *::after{
+  box-sizing:border-box;
+}
+
+img, svg, video, canvas{
+  max-width:100%;
+  height:auto;
+}
+
+/* 페이지 루트도 가로 넘침 방지 */
+.page, .main-wrap, .top-header, .footer-wrap{
+  max-width:100%;
+}
+
+/* flex 안에서 내용이 길어질 때 부모 밖으로 튀는 현상 방지 */
+.hdr-row, .hdr-left, .hdr-right,
+.footer-top, .footer-left, .footer-links{
+  min-width:0;
+}
