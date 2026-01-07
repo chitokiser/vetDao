@@ -1,3 +1,4 @@
+// \assets\js\config.js
 window.CONFIG = {
   CHAIN_ID: 204,
   RPC_URL: "https://opbnb-mainnet-rpc.bnbchain.org",

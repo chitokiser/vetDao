@@ -2,6 +2,11 @@
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.min.js";
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
+// ✅ Firebase 초기화/anon-auth 완료 대기 (firebase.js에서 window.firebaseReady 제공)
+if (window.firebaseReady) {
+  await window.firebaseReady;
+}
+
 const CONFIG = window.CONFIG;
 const ABI = window.ABI;
 const db = window.db;
@@ -33,6 +38,12 @@ const ERC20_ABI = [
   "function symbol() view returns (string)",
   "function transfer(address,uint256) returns (bool)",
 ];
+
+// ✅ 컨트랙트별 Firestore 컬렉션 분리 (sell.js와 동일 규칙)
+function tradesCollectionName() {
+  const addr = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
+  return addr ? "trades_" + addr : "trades";
+}
 
 const VETEX_ERRORS = [
   "error BadStatus()",
@@ -160,8 +171,6 @@ function showNote(msg, type = "", alsoAlert = false) {
     el.className = "note" + (type ? " " + type : "");
     el.textContent = msg || "";
   }
-
-  // note가 없거나 화면에서 놓치면 알럿까지
   if (alsoAlert && msg) alert(msg);
 }
 
@@ -202,7 +211,6 @@ function tokenSymbolByAddr(addr) {
 function setBtnState(id, enabled, reason = "") {
   const el = $(id);
   if (!el) return;
-
   el.disabled = !enabled;
   el.style.opacity = enabled ? "1" : "0.45";
   el.style.pointerEvents = enabled ? "auto" : "none";
@@ -322,6 +330,7 @@ async function refreshHeaderBalances() {
   try {
     const hexAddr = CONFIG?.TOKENS?.HEX?.address;
     const usdtAddr = CONFIG?.TOKENS?.USDT?.address;
+    const vetAddr = CONFIG?.TOKENS?.VET?.address || VET_ADDR;
 
     if ($("myHexBal")) {
       if (hexAddr) {
@@ -335,6 +344,14 @@ async function refreshHeaderBalances() {
         const { b, d } = await readTokenBalance(usdtAddr, account, CONFIG?.TOKENS?.USDT?.decimals ?? 18);
         setText("myUsdtBal", ethers.formatUnits(b, d));
       } else setText("myUsdtBal", "-");
+    }
+
+    if ($("myVetBal")) {
+      if (vetAddr) {
+        const { b, d } = await readTokenBalance(vetAddr, account, CONFIG?.TOKENS?.VET?.decimals ?? 0);
+        // VET는 0 decimals 가정. 그래도 안전하게 formatUnits 사용
+        setText("myVetBal", ethers.formatUnits(b, d));
+      } else setText("myVetBal", "-");
     }
   } catch (e) {
     console.error(e);
@@ -454,26 +471,22 @@ async function simulateEscrowTransfer(tokenAddr, to, amount) {
   const data = erc20Iface.encodeFunctionData("transfer", [to, amount]);
 
   try {
-    // from=VET_EX로 잡아 "vetEX가 보낸다면" 전송이 되는지 확인
     const ret = await p.call({
       to: tokenAddr,
       from: VET_EX,
       data,
     });
 
-    // 표준 ERC20 returns(bool) → 32바이트 true/false
-    // ret이 0x 또는 너무 짧으면 "non-standard" 가능
     if (!ret || ret === "0x") {
       return { ok: true, kind: "nostd", raw: ret };
     }
 
-    // bool 디코드
     let ok = true;
     try {
       const [b] = erc20Iface.decodeFunctionResult("transfer", ret);
       ok = !!b;
     } catch {
-      ok = true; // 디코딩 실패면 non-standard로 보고 통과
+      ok = true;
       return { ok, kind: "nostd", raw: ret };
     }
     return { ok, kind: "bool", raw: ret };
@@ -511,11 +524,12 @@ async function loadTrade(tradeId) {
     return null;
   }
 
-  // Firestore meta
+  // Firestore meta (✅ contracts별 컬렉션)
   let meta = null;
   if (db) {
     try {
-      const ref = doc(db, "trades", String(tradeId));
+      const col = tradesCollectionName();
+      const ref = doc(db, col, String(tradeId));
       const snap = await getDoc(ref);
       if (snap.exists()) meta = snap.data();
     } catch (e) {
@@ -554,6 +568,7 @@ async function loadTrade(tradeId) {
     dec =
       sym === "HEX" ? (CONFIG?.TOKENS?.HEX?.decimals ?? 18)
       : sym === "USDT" ? (CONFIG?.TOKENS?.USDT?.decimals ?? 18)
+      : sym === "VET" ? (CONFIG?.TOKENS?.VET?.decimals ?? 0)
       : 18;
   }
 
@@ -566,14 +581,18 @@ async function loadTrade(tradeId) {
   setText("vSeller", seller ? String(seller) : "-");
   setText("vBuyer", buyer && buyer !== ethers.ZeroAddress ? String(buyer) : "-");
 
+  // seller SNS: meta 우선
   let sellerSns = meta?.sellerSns || "-";
+  // getSellerContact는 vetEX ABI에 없을 수 있음 → 안전하게 try
   try {
-    const [kakaoId, telegramId, registered] = await c.getSellerContact(seller);
-    if (registered) {
-      const kk = kakaoId ? `kakao: ${kakaoId}` : "";
-      const tg = telegramId ? `tg: ${telegramId}` : "";
-      const join = [kk, tg].filter(Boolean).join(" / ");
-      sellerSns = join || sellerSns;
+    if (typeof c.getSellerContact === "function") {
+      const [kakaoId, telegramId, registered] = await c.getSellerContact(seller);
+      if (registered) {
+        const kk = kakaoId ? `kakao: ${kakaoId}` : "";
+        const tg = telegramId ? `tg: ${telegramId}` : "";
+        const join = [kk, tg].filter(Boolean).join(" / ");
+        sellerSns = join || sellerSns;
+      }
     }
   } catch {}
   setText("vSellerSns", sellerSns);
@@ -666,7 +685,6 @@ async function doRelease(tradeId) {
       throw new Error("구매자 주소가 비어있습니다.\nacceptTrade 처리 여부를 확인하세요.");
     }
 
-    // 에스크로 잔고 체크
     const { bal, d } = await readEscrowTokenBalance(token, 18);
     if (bal < amount) {
       const need = ethers.formatUnits(amount, d);
@@ -674,7 +692,6 @@ async function doRelease(tradeId) {
       throw new Error(`에스크로 잔고 부족\n필요=${need}\n현재=${cur}`);
     }
 
-    // 가장 중요: token transfer 시뮬레이션
     showNote("토큰 전송 시뮬레이션(eth_call) 중...", "");
     const sim = await simulateEscrowTransfer(token, buyer, amount);
 
@@ -689,11 +706,6 @@ async function doRelease(tradeId) {
         "- vetEX 주소가 화이트리스트에 없음\n" +
         "- 특정 컨트랙트/주소 전송 제한(블랙리스트/제한)\n"
       );
-    }
-
-    // bool인데 false면 더 명확히
-    if (sim.kind === "bool" && sim.raw && sim.raw !== "0x") {
-      // 여기서 ok=true라서 통과
     }
 
     showNote("토큰 이체(release) 전송...", "");

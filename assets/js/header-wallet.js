@@ -1,5 +1,6 @@
 // /assets/js/header-wallet.js
 // ethers는 UMD 전역(window.ethers) 사용
+const ethers = window.ethers;
 
 const USDT_ADDRESS = "0x9e5aac1ba1a2e6aed6b32689dfcf62a509ca96f3";
 const HEX_ADDRESS  = "0x41F2Ea9F4eF7c4E35ba1a8438fC80937eD4E5464";
@@ -10,17 +11,16 @@ const ERC20_ABI = [
   "function decimals() view returns (uint8)"
 ];
 
-// vetEX 읽기 전용 (전체 ABI 없어도 됨)
 const VETEX_READ_ABI = [
   "function nextTradeId() view returns (uint256)"
 ];
 
-let provider = null;      // BrowserProvider (지갑)
+let provider = null;
 let userAddress = null;
 
-let readProvider = null;  // JsonRpcProvider (RPC 읽기)
-let bound = false;
-let dashBound = false;
+let readProvider = null;
+let boundWallet = false;
+let boundUi = false;
 
 function els() {
   return {
@@ -41,7 +41,10 @@ function els() {
     elPageUsdt: document.getElementById("myUsdtBal"),
     elPageVet: document.getElementById("myVetBal"),
 
-    // dashboard toggle UI (IMPORTANT)
+    // UI buttons (burger / dash)
+    burger: document.getElementById("hdrBurger"),
+    menu: document.getElementById("hdrMenu"),
+
     dashBtn: document.getElementById("hdrDashBtn"),
     dash: document.getElementById("hdrDash"),
     dashClose: document.getElementById("hdrDashClose"),
@@ -61,7 +64,17 @@ function els() {
     dashNextId: document.getElementById("hdrDashNextId"),
     dashRpc: document.getElementById("hdrDashRpc"),
     dashUpdated: document.getElementById("hdrDashUpdated"),
+
+    hdrNote: document.getElementById("hdrNote"),
   };
+}
+
+function note(msg, type = "") {
+  const { hdrNote } = els();
+  if (!hdrNote) return;
+  hdrNote.style.display = msg ? "block" : "none";
+  hdrNote.className = "note" + (type ? " " + type : "");
+  hdrNote.textContent = msg || "";
 }
 
 function markOnchain(el) {
@@ -91,7 +104,7 @@ function setAddr(addr) {
 
 function fmtUnitsSafe(value, decimals, maxFrac) {
   try {
-    const n = Number(window.ethers.formatUnits(value, decimals));
+    const n = Number(ethers.formatUnits(value ?? 0n, Number(decimals ?? 18)));
     if (!Number.isFinite(n)) return "-";
     return n.toLocaleString(undefined, { maximumFractionDigits: maxFrac });
   } catch {
@@ -114,9 +127,45 @@ function getVetExAddress() {
 function ensureReadProvider() {
   if (readProvider) return readProvider;
   const rpc = window.CONFIG?.RPC_URL;
-  if (!rpc || !window.ethers) return null;
-  readProvider = new window.ethers.JsonRpcProvider(rpc);
+  if (!rpc || !ethers) return null;
+  readProvider = new ethers.JsonRpcProvider(rpc);
   return readProvider;
+}
+
+async function isContract(rp, addr) {
+  try {
+    if (!rp || !addr) return false;
+    const code = await rp.getCode(addr);
+    return code && code !== "0x";
+  } catch {
+    return false;
+  }
+}
+
+async function readDecimalsSafe(rp, tokenAddr, fallbackDecimals) {
+  const fallback = Number.isFinite(Number(fallbackDecimals)) ? Number(fallbackDecimals) : 18;
+  const ok = await isContract(rp, tokenAddr);
+  if (!ok) return fallback;
+  try {
+    const t = new ethers.Contract(tokenAddr, ERC20_ABI, rp);
+    const d = await t.decimals();
+    const dn = Number(d);
+    return Number.isFinite(dn) ? dn : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function readBalanceSafe(rp, tokenAddr, ownerAddr) {
+  try {
+    if (!rp || !tokenAddr || !ownerAddr) return 0n;
+    const ok = await isContract(rp, tokenAddr);
+    if (!ok) return 0n;
+    const t = new ethers.Contract(tokenAddr, ERC20_ABI, rp);
+    return (await t.balanceOf(ownerAddr)) ?? 0n;
+  } catch {
+    return 0n;
+  }
 }
 
 function setBalances({ hexStr, usdtStr, vetStr }) {
@@ -145,26 +194,22 @@ function setBalances({ hexStr, usdtStr, vetStr }) {
 async function loadWalletBalances() {
   if (!provider || !userAddress) return;
 
-  const hex = new window.ethers.Contract(HEX_ADDRESS, ERC20_ABI, provider);
-  const usdt = new window.ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider);
-  const vet = new window.ethers.Contract(VET_ADDRESS, ERC20_ABI, provider);
+  const rp = ensureReadProvider() || provider;
 
-  const [
-    hexBal, usdtBal, vetBal,
-    hexDec, usdtDec, vetDec
-  ] = await Promise.all([
-    hex.balanceOf(userAddress),
-    usdt.balanceOf(userAddress),
-    vet.balanceOf(userAddress),
-    hex.decimals(),
-    usdt.decimals(),
-    vet.decimals(),
+  const hexDec  = await readDecimalsSafe(rp, HEX_ADDRESS,  window.CONFIG?.TOKENS?.HEX?.decimals ?? 18);
+  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 18);
+  const vetDec  = await readDecimalsSafe(rp, VET_ADDRESS,  window.CONFIG?.TOKENS?.VET?.decimals ?? 0);
+
+  const [hexBal, usdtBal, vetBal] = await Promise.all([
+    readBalanceSafe(rp, HEX_ADDRESS, userAddress),
+    readBalanceSafe(rp, USDT_ADDRESS, userAddress),
+    readBalanceSafe(rp, VET_ADDRESS, userAddress),
   ]);
 
   setBalances({
-    hexStr: fmtUnitsSafe(hexBal, hexDec, 4),
+    hexStr: fmtUnitsSafe(hexBal,  hexDec,  4),
     usdtStr: fmtUnitsSafe(usdtBal, usdtDec, 2),
-    vetStr: fmtUnitsSafe(vetBal, vetDec, 4),
+    vetStr: fmtUnitsSafe(vetBal,  vetDec,  4),
   });
 }
 
@@ -177,7 +222,6 @@ async function loadContractDashboard() {
   const vetEx = getVetExAddress();
   const rp = ensureReadProvider();
   const rpcUrl = window.CONFIG?.RPC_URL || "-";
-
   if (dashRpc) dashRpc.textContent = rpcUrl;
 
   if (!vetEx || !rp) {
@@ -193,51 +237,97 @@ async function loadContractDashboard() {
 
   if (dashContract) dashContract.textContent = shortAddr(vetEx);
 
-  const hex = new window.ethers.Contract(HEX_ADDRESS, ERC20_ABI, rp);
-  const usdt = new window.ethers.Contract(USDT_ADDRESS, ERC20_ABI, rp);
-  const vet = new window.ethers.Contract(VET_ADDRESS, ERC20_ABI, rp);
-  const ex  = new window.ethers.Contract(vetEx, VETEX_READ_ABI, rp);
+  const hexDec  = await readDecimalsSafe(rp, HEX_ADDRESS,  window.CONFIG?.TOKENS?.HEX?.decimals ?? 18);
+  const usdtDec = await readDecimalsSafe(rp, USDT_ADDRESS, window.CONFIG?.TOKENS?.USDT?.decimals ?? 18);
+  const vetDec  = await readDecimalsSafe(rp, VET_ADDRESS,  window.CONFIG?.TOKENS?.VET?.decimals ?? 0);
 
-  const [
-    cxHexBal, cxUsdtBal, cxVetBal,
-    hexDec, usdtDec, vetDec,
-    nextId
-  ] = await Promise.all([
-    hex.balanceOf(vetEx),
-    usdt.balanceOf(vetEx),
-    vet.balanceOf(vetEx),
-    hex.decimals(),
-    usdt.decimals(),
-    vet.decimals(),
-    ex.nextTradeId(),
+  const [cxHexBal, cxUsdtBal, cxVetBal] = await Promise.all([
+    readBalanceSafe(rp, HEX_ADDRESS, vetEx),
+    readBalanceSafe(rp, USDT_ADDRESS, vetEx),
+    readBalanceSafe(rp, VET_ADDRESS, vetEx),
   ]);
 
   if (dashCxHex) { dashCxHex.textContent = fmtUnitsSafe(cxHexBal, hexDec, 4); markOnchain(dashCxHex); }
   if (dashCxUsdt) { dashCxUsdt.textContent = fmtUnitsSafe(cxUsdtBal, usdtDec, 2); markOnchain(dashCxUsdt); }
   if (dashCxVet) { dashCxVet.textContent = fmtUnitsSafe(cxVetBal, vetDec, 4); markOnchain(dashCxVet); }
 
-  const nid = Number(nextId);
+  let nextId = null;
+  try {
+    const ex = new ethers.Contract(vetEx, VETEX_READ_ABI, rp);
+    nextId = await ex.nextTradeId();
+  } catch {
+    nextId = null;
+  }
+
+  const nid = Number(nextId ?? 0);
   const tradeCount = Number.isFinite(nid) && nid > 0 ? nid - 1 : 0;
 
-  if (dashNextId) { dashNextId.textContent = String(nid); markOnchain(dashNextId); }
+  if (dashNextId) { dashNextId.textContent = String(Number.isFinite(nid) ? nid : "-"); markOnchain(dashNextId); }
   if (dashTrades) { dashTrades.textContent = tradeCount.toLocaleString(); markOnchain(dashTrades); }
 
   if (dashUpdated) dashUpdated.textContent = nowLabel();
 }
 
+async function ensureChainOpBNB() {
+  const want = Number(window.CONFIG?.CHAIN_ID ?? 204);
+  const wantHex = "0x" + want.toString(16);
+
+  try {
+    const current = await window.ethereum.request({ method: "eth_chainId" });
+    if (current && current.toLowerCase() === wantHex.toLowerCase()) return true;
+  } catch {}
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: wantHex }],
+    });
+    return true;
+  } catch (e) {
+    if (e?.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: wantHex,
+              chainName: "opBNB Mainnet",
+              nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+              rpcUrls: [window.CONFIG?.RPC_URL || "https://opbnb-mainnet-rpc.bnbchain.org"],
+              blockExplorerUrls: ["https://opbnbscan.com"],
+            },
+          ],
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+}
+
 async function connectWallet() {
   try {
-    if (!window.ethereum) return alert("MetaMask가 설치되어 있지 않습니다.");
-    if (!window.ethers) return alert("ethers 로드가 안되었습니다. ethers.umd.min.js 로드를 확인하세요.");
+    if (!window.ethereum) return alert("MetaMask/Rabby가 설치되어 있지 않습니다.");
+    if (!ethers) return alert("ethers 로드가 안되었습니다. ethers.umd.min.js 로드를 확인하세요.");
 
-    provider = new window.ethers.BrowserProvider(window.ethereum);
+    const ok = await ensureChainOpBNB();
+    if (!ok) {
+      note("opBNB 네트워크로 전환이 필요합니다.", "bad");
+      return;
+    }
+
+    provider = new ethers.BrowserProvider(window.ethereum);
     await provider.send("eth_requestAccounts", []);
 
-    const signer = await provider.getSigner();
-    userAddress = await signer.getAddress();
+    const s = await provider.getSigner();
+    userAddress = await s.getAddress();
 
     setConnectLabel(true);
     setAddr(userAddress);
+    note("지갑 연결됨: " + shortAddr(userAddress), "ok");
+
     await loadWalletBalances();
 
     const { dash } = els();
@@ -246,61 +336,43 @@ async function connectWallet() {
     }
   } catch (e) {
     console.error("[wallet] connect error:", e);
+    note(e?.message || "지갑 연결 실패", "bad");
     alert(e?.message || "지갑 연결 실패");
   }
 }
 
-function bindWalletOnce() {
-  if (bound) return;
+/* ====== UI 토글을 여기서 전담 (partials 주입되어도 100% 동작) ====== */
+function bindHeaderUiOnce() {
+  if (boundUi) return;
 
-  const { btnHeaderConnect, btnPageConnect } = els();
-  const hasAny = !!btnHeaderConnect || !!btnPageConnect;
-  if (!hasAny) return;
+  const { burger, menu, dashBtn, dash, dashClose } = els();
+  if (!burger || !menu || !dashBtn || !dash) return;
 
-  if (btnHeaderConnect) btnHeaderConnect.addEventListener("click", connectWallet);
-  if (btnPageConnect) btnPageConnect.addEventListener("click", connectWallet);
+  // burger
+  const closeMenu = () => { menu.classList.remove("open"); burger.setAttribute("aria-expanded","false"); };
+  burger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.classList.toggle("open");
+    burger.setAttribute("aria-expanded", menu.classList.contains("open") ? "true" : "false");
+  });
+  menu.addEventListener("click", (e) => {
+    const a = e.target && e.target.closest && e.target.closest("a");
+    if (a) closeMenu();
+  });
+  document.addEventListener("click", () => closeMenu());
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 
-  if (window.ethereum?.on) {
-    window.ethereum.on("accountsChanged", async (accs) => {
-      userAddress = accs?.[0] || null;
-      setAddr(userAddress);
-
-      if (userAddress) {
-        setConnectLabel(true);
-        provider = new window.ethers.BrowserProvider(window.ethereum);
-        await loadWalletBalances();
-      } else {
-        setConnectLabel(false);
-        setBalances({ hexStr: "-", usdtStr: "-", vetStr: "-" });
-      }
-    });
-
-    window.ethereum.on("chainChanged", () => {
-      provider = new window.ethers.BrowserProvider(window.ethereum);
-      readProvider = null;
-    });
-  }
-
-  bound = true;
-}
-
-function bindDashOnce() {
-  if (dashBound) return;
-
-  const { dashBtn, dash, dashClose } = els();
-  if (!dashBtn || !dash) return; // header 아직 안 꽂힘
-
-  function openDash() {
+  // dash
+  const openDash = () => {
     dash.classList.add("open");
-    dashBtn.setAttribute("aria-expanded", "true");
+    dashBtn.setAttribute("aria-expanded","true");
     loadContractDashboard().catch(() => {});
     if (userAddress && provider) loadWalletBalances().catch(() => {});
-  }
-
-  function closeDash() {
+  };
+  const closeDash = () => {
     dash.classList.remove("open");
-    dashBtn.setAttribute("aria-expanded", "false");
-  }
+    dashBtn.setAttribute("aria-expanded","false");
+  };
 
   dashBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -309,35 +381,71 @@ function bindDashOnce() {
   });
 
   if (dashClose) dashClose.addEventListener("click", () => closeDash());
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDash(); });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeDash();
-  });
-
-  dashBound = true;
+  boundUi = true;
 }
 
-function startBindWatcher() {
+function bindWalletOnce() {
+  const { btnHeaderConnect, btnPageConnect } = els();
+  if (!btnHeaderConnect && !btnPageConnect) return false;
+
+  if (btnHeaderConnect && !btnHeaderConnect.__bound) {
+    btnHeaderConnect.addEventListener("click", connectWallet);
+    btnHeaderConnect.__bound = true;
+  }
+  if (btnPageConnect && !btnPageConnect.__bound) {
+    btnPageConnect.addEventListener("click", connectWallet);
+    btnPageConnect.__bound = true;
+  }
+
+  if (!boundWallet && window.ethereum?.on) {
+    window.ethereum.on("accountsChanged", async (accs) => {
+      userAddress = accs?.[0] || null;
+      setAddr(userAddress);
+
+      if (userAddress) {
+        setConnectLabel(true);
+        provider = new ethers.BrowserProvider(window.ethereum);
+        readProvider = null;
+        await loadWalletBalances();
+      } else {
+        setConnectLabel(false);
+        setBalances({ hexStr: "-", usdtStr: "-", vetStr: "-" });
+      }
+    });
+
+    window.ethereum.on("chainChanged", () => {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      readProvider = null;
+      loadContractDashboard().catch(() => {});
+      if (userAddress) loadWalletBalances().catch(() => {});
+    });
+
+    boundWallet = true;
+  }
+
+  return true;
+}
+
+function startWatcher() {
   let tries = 0;
   const t = setInterval(() => {
-    bindWalletOnce();
-    bindDashOnce();
+    bindHeaderUiOnce();
+    const ok = bindWalletOnce();
     tries += 1;
-    if ((bound && dashBound) || tries > 60) clearInterval(t);
+    if ((boundUi && ok) || tries > 200) clearInterval(t);
   }, 50);
 }
 
-bindWalletOnce();
-bindDashOnce();
-startBindWatcher();
+// 부팅
+startWatcher();
 
-window.addEventListener("partials:loaded", () => {
-  bindWalletOnce();
-  bindDashOnce();
-  startBindWatcher();
-});
+// 지갑 연결 없어도 계약 정보는 미리 표시(대시보드 열면 즉시 보여야 해서)
+setTimeout(() => { loadContractDashboard().catch(() => {}); }, 300);
 
-// 지갑 연결 없어도 계약 정보는 미리 채움
-setTimeout(() => {
-  loadContractDashboard().catch(() => {});
-}, 200);
+// 디버그
+window.__hdrWallet = {
+  connect: connectWallet,
+  reload: () => Promise.allSettled([loadWalletBalances(), loadContractDashboard()]),
+};
