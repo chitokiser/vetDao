@@ -1,38 +1,448 @@
-<header class="top-header" style="padding:18px 18px 10px 18px;">
-  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
-    <div style="flex:1; min-width:0;">
-      <!-- 로고 + (데스크탑) 메뉴 + (모바일) 햄버거 -->
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-        <div style="display:flex; align-items:center; gap:18px; min-width:0;">
-          <a href="index.html" style="display:inline-flex; align-items:center;">
-            <img
-              src="assets/img/vet.png"
-              alt="VET DAO"
-              style="height:34px; display:block;"
-            />
-          </a>
+<!-- /partials/header.html -->
+<header class="top-header">
+  <style>
+    .hdr-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .hdr-left{
+      display:flex;
+      align-items:center;
+      gap:18px;
+      min-width:0;
+    }
+    .hdr-nav{
+      display:flex;
+      gap:16px;
+      font-size:14px;
+      margin-left:18px;
+    }
+    .hdr-nav a{
+      text-decoration:none;
+      color:var(--muted);
+    }
+    .hdr-nav a:hover{ color:var(--text); }
 
-      <nav style="display:flex; gap:16px; font-size:14px; margin-left:18px;">
-        <a href="/index.html" style="text-decoration:none; color:var(--muted);">거래소</a>
-        <a href="/sell.html" style="text-decoration:none; color:var(--muted);">판매등록</a>
-        <a href="/profile.html" style="text-decoration:none; color:var(--muted);">프로필</a>
-        <a href="/admin.html" style="text-decoration:none; color:var(--muted);">관리자</a>
-      </nav>
-    </div>
+    .hdr-right{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
 
-    <div style="display:flex; align-items:center; gap:10px;">
-      <div id="hdrBalances" class="pill" style="display:none; gap:12px; align-items:center;">
-        <span id="hdrAddr" class="mono" style="font-size:12px;"></span>
-        <span style="width:1px;height:14px;background:var(--line);display:inline-block;"></span>
-        <span style="font-size:12px; color:var(--muted);">HEX</span>
-        <span id="hdrHex" class="mono" style="font-size:12px; color:var(--text);">-</span>
-        <span style="font-size:12px; color:var(--muted);">USDT</span>
-        <span id="hdrUsdt" class="mono" style="font-size:12px; color:var(--text);">-</span>
+    /* 햄버거 버튼 */
+    .hdr-burger{
+      width:40px;
+      height:40px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      color:var(--text);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      user-select:none;
+    }
+    .hdr-burger:active{ transform: translateY(1px); }
+    .hdr-burger svg{ width:22px; height:22px; }
+
+    /* 모바일 드롭다운 */
+    .hdr-menu{
+      display:none;
+      margin-top:12px;
+      border:1px solid var(--line);
+      border-radius:16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      overflow:hidden;
+    }
+    .hdr-menu a{
+      display:block;
+      padding:12px 14px;
+      text-decoration:none;
+      color:var(--text);
+      border-top:1px solid rgba(255,255,255,0.08);
+    }
+    .hdr-menu a:first-child{ border-top:none; }
+    .hdr-menu a:hover{ background: rgba(255,255,255,0.05); }
+    .hdr-menu.open{ display:block; }
+
+    /* ===== Dashboard (Header) ===== */
+    .hdr-dash-btn{
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(52,211,255,0.18), rgba(138,125,255,0.10));
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      user-select:none;
+    }
+    .hdr-dash-btn:hover{
+      border-color: rgba(52,211,255,0.45);
+      box-shadow: 0 0 0 4px rgba(52,211,255,0.08);
+    }
+    .hdr-dash-btn svg{ width:18px; height:18px; }
+
+    .hdr-dash{
+      display:none;
+      margin-top:12px;
+      border:1px solid rgba(255,255,255,0.14);
+      border-radius:18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+      overflow:hidden;
+    }
+    .hdr-dash.open{ display:block; }
+
+    .hdr-dash-top{
+      padding:12px 14px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border-bottom:1px solid rgba(255,255,255,0.10);
+    }
+    .hdr-dash-title{
+      font-size:13px;
+      color: var(--text);
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .hdr-dash-sub{
+      font-size:12px;
+      color: var(--muted);
+      margin-top:2px;
+    }
+    .hdr-dash-close{
+      width:34px;height:34px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      cursor:pointer;
+    }
+    .hdr-dash-close:hover{
+      border-color: rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.06);
+    }
+
+    .hdr-dash-body{
+      padding:14px;
+      display:grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap:14px;
+    }
+    .hdr-dash-col{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      min-width:0;
+    }
+
+    .hdr-card{
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+      padding:12px;
+      min-width:0;
+    }
+    .hdr-card-h{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .hdr-card-t{
+      font-size:12px;
+      color: var(--muted);
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .hdr-chip{
+      font-size:11px;
+      color: var(--muted);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:999px;
+      padding:6px 10px;
+      background: rgba(255,255,255,0.03);
+      white-space:nowrap;
+    }
+
+    .hdr-metrics{
+      display:grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap:10px;
+    }
+    .hdr-metric{
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:14px;
+      padding:10px;
+      background: rgba(0,0,0,0.12);
+      min-width:0;
+    }
+    .hdr-mk{ font-size:11px; color: var(--muted); }
+    .hdr-mv{ font-size:14px; margin-top:6px; color: var(--text); }
+    .hdr-mv.small{ font-size:12px; }
+
+    .hdr-list{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .hdr-line{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      border-top:1px dashed rgba(255,255,255,0.10);
+      padding-top:8px;
+    }
+    .hdr-line:first-child{
+      border-top:none;
+      padding-top:0;
+    }
+    .hdr-k{
+      font-size:12px;
+      color: var(--muted);
+      white-space:nowrap;
+    }
+    .hdr-v{
+      font-size:12px;
+      color: var(--text);
+      text-overflow: ellipsis;
+      overflow:hidden;
+      white-space:nowrap;
+      max-width: 100%;
+    }
+
+    /* 반응형 */
+    @media (max-width: 820px){
+      .hdr-nav{ display:none; }
+      .hdr-burger{ display:inline-flex; }
+      #hdrBalances{ display:none !important; }
+      .hdr-dash-body{ grid-template-columns: 1fr; }
+      .hdr-metrics{ grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 420px){
+      .hdr-left{ gap:12px; }
+      .hdr-metrics{ grid-template-columns: 1fr; }
+    }
+  </style>
+
+  <div class="layout-wrap" style="padding:18px 0 10px 0;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+      <div style="flex:1; min-width:0;">
+
+        <div class="hdr-row">
+          <div class="hdr-left">
+            <a href="index.html" style="display:inline-flex; align-items:center;">
+              <img src="assets/img/vet.png" alt="VET DAO" style="height:34px; display:block;" />
+            </a>
+
+            <nav class="hdr-nav" aria-label="Primary">
+              <a href="/index.html">거래소</a>
+              <a href="/sell.html">판매등록</a>
+              <a href="/profile.html">프로필</a>
+              <a href="/admin.html">관리자</a>
+            </nav>
+          </div>
+
+          <div class="hdr-right">
+            <div id="hdrBalances" class="pill" style="display:none; gap:12px; align-items:center;">
+              <span id="hdrAddr" class="mono" style="font-size:12px;"></span>
+              <span style="width:1px;height:14px;background:var(--line);display:inline-block;"></span>
+
+              <span style="font-size:12px; color:var(--muted);">HEX</span>
+              <span id="hdrHex" class="mono" style="font-size:12px; color:var(--text);">-</span>
+
+              <span style="font-size:12px; color:var(--muted);">USDT</span>
+              <span id="hdrUsdt" class="mono" style="font-size:12px; color:var(--text);">-</span>
+
+              <span style="font-size:12px; color:var(--muted);">VET</span>
+              <span id="hdrVet" class="mono" style="font-size:12px; color:var(--text);">-</span>
+            </div>
+
+            <button class="btn" id="hdrConnect">지갑 연결</button>
+
+            <button class="hdr-dash-btn" id="hdrDashBtn" aria-label="대시보드 열기" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 13.5V19a1 1 0 0 0 1 1h4v-6.5H4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M10 4h4v16h-4V4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M15 10h5v10h-5V10Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              </svg>
+              대시보드
+            </button>
+
+            <button class="hdr-burger" id="hdrBurger" aria-label="메뉴 열기" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 7H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M4 12H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <path d="M4 17H20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <nav class="hdr-menu" id="hdrMenu" aria-label="Mobile Menu">
+          <a href="/index.html">거래소</a>
+          <a href="/sell.html">판매등록</a>
+          <a href="/profile.html">프로필</a>
+          <a href="/admin.html">관리자</a>
+        </nav>
+
+        <!-- Dashboard Panel -->
+        <section class="hdr-dash" id="hdrDash" aria-label="Header Dashboard">
+          <div class="hdr-dash-top">
+            <div>
+              <div class="hdr-dash-title">
+                온체인 대시보드
+                <span class="hdr-chip" id="hdrDashNet">opBNB</span>
+              </div>
+              <div class="hdr-dash-sub" id="hdrDashSub">계약/지갑 잔고와 등록 현황을 표시합니다.</div>
+            </div>
+            <button class="hdr-dash-close" id="hdrDashClose" aria-label="닫기">✕</button>
+          </div>
+
+          <div class="hdr-dash-body">
+            <div class="hdr-dash-col">
+
+              <div class="hdr-card">
+                <div class="hdr-card-h">
+                  <div class="hdr-card-t">내 지갑</div>
+                  <span class="hdr-chip" id="hdrDashAddr">미연결</span>
+                </div>
+
+                <div class="hdr-metrics">
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">HEX</div>
+                    <div class="hdr-mv onchain" id="hdrDashMyHex">-</div>
+                  </div>
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">USDT</div>
+                    <div class="hdr-mv onchain" id="hdrDashMyUsdt">-</div>
+                  </div>
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">VET</div>
+                    <div class="hdr-mv onchain" id="hdrDashMyVet">-</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hdr-card">
+                <div class="hdr-card-h">
+                  <div class="hdr-card-t">에스크로 컨트랙트 보유량(vetEX)</div>
+                  <span class="hdr-chip mono" id="hdrDashContract">-</span>
+                </div>
+
+                <div class="hdr-metrics">
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">HEX</div>
+                    <div class="hdr-mv onchain" id="hdrDashCxHex">-</div>
+                  </div>
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">USDT</div>
+                    <div class="hdr-mv onchain" id="hdrDashCxUsdt">-</div>
+                  </div>
+                  <div class="hdr-metric">
+                    <div class="hdr-mk">VET</div>
+                    <div class="hdr-mv onchain" id="hdrDashCxVet">-</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="hdr-dash-col">
+              <div class="hdr-card">
+                <div class="hdr-card-h">
+                  <div class="hdr-card-t">등록/상태</div>
+                  <span class="hdr-chip" id="hdrDashUpdated">-</span>
+                </div>
+
+                <div class="hdr-list">
+                  <div class="hdr-line">
+                    <div class="hdr-k">판매등록 수(온체인)</div>
+                    <div class="hdr-v onchain" id="hdrDashTrades">-</div>
+                  </div>
+                  <div class="hdr-line">
+                    <div class="hdr-k">nextTradeId</div>
+                    <div class="hdr-v mono onchain" id="hdrDashNextId">-</div>
+                  </div>
+                  <div class="hdr-line">
+                    <div class="hdr-k">읽기 RPC</div>
+                    <div class="hdr-v mono" id="hdrDashRpc">-</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hdr-card">
+                <div class="hdr-card-h">
+                  <div class="hdr-card-t">빠른 작업</div>
+                  <span class="hdr-chip">바로가기</span>
+                </div>
+                <div class="hdr-list">
+                  <div class="hdr-line">
+                    <div class="hdr-k">판매등록</div>
+                    <a class="btn" href="/sell.html">열기</a>
+                  </div>
+                  <div class="hdr-line">
+                    <div class="hdr-k">프로필(SNS)</div>
+                    <a class="btn" href="/profile.html">열기</a>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <div id="hdrNote" class="note" style="display:none; margin-top:10px;"></div>
       </div>
-
-      <button class="btn" id="hdrConnect">지갑 연결</button>
     </div>
   </div>
 
-  <div id="hdrNote" class="note" style="display:none; margin-top:10px;"></div>
+  <script>
+    (function(){
+      const burger = document.getElementById("hdrBurger");
+      const menu = document.getElementById("hdrMenu");
+      if (burger && menu) {
+        function openMenu(){ menu.classList.add("open"); burger.setAttribute("aria-expanded","true"); }
+        function closeMenu(){ menu.classList.remove("open"); burger.setAttribute("aria-expanded","false"); }
+        burger.addEventListener("click", function(e){ e.stopPropagation(); menu.classList.toggle("open"); burger.setAttribute("aria-expanded", menu.classList.contains("open") ? "true" : "false"); });
+        menu.addEventListener("click", function(e){ const a = e.target && e.target.closest && e.target.closest("a"); if(a) closeMenu(); });
+        document.addEventListener("click", function(){ closeMenu(); });
+        document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeMenu(); });
+      }
+
+      // Dashboard toggle
+      const dashBtn = document.getElementById("hdrDashBtn");
+      const dash = document.getElementById("hdrDash");
+      const dashClose = document.getElementById("hdrDashClose");
+      if (dashBtn && dash) {
+        function openDash(){
+          dash.classList.add("open");
+          dashBtn.setAttribute("aria-expanded","true");
+          window.dispatchEvent(new CustomEvent("hdrdash:open"));
+        }
+        function closeDash(){
+          dash.classList.remove("open");
+          dashBtn.setAttribute("aria-expanded","false");
+        }
+        dashBtn.addEventListener("click", function(e){
+          e.stopPropagation();
+          if (dash.classList.contains("open")) closeDash();
+          else openDash();
+        });
+        if (dashClose) dashClose.addEventListener("click", function(){ closeDash(); });
+        document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeDash(); });
+      }
+    })();
+  </script>
 </header>

@@ -10,17 +10,8 @@
 </head>
 <body>
   <div class="page">
-    <header class="topbar">
-      <div class="topbar__left">
-        <a class="brand" href="/index.html">
-          <img src="/assets/img/logo.svg" alt="HEX DAO" class="brand__logo" />
-          <span class="brand__name">Admin</span>
-        </a>
-      </div>
-      <div class="topbar__right">
-        <button class="btn secondary" id="btnConnect">지갑 연결</button>
-      </div>
-    </header>
+    <div id="site-header"></div>
+ 
 
     <main class="container">
       <section class="card">
@@ -63,8 +54,24 @@
         </div>
       </section>
     </main>
+    
+    <div id="site-footer"></div>
   </div>
 
-  <script type="module" src="/assets/js/pages/admin.js"></script>
+  </div>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+<script src="/assets/js/config.js"></script>
+<script src="/assets/js/contract.js"></script>
+<script type="module" src="/assets/js/firebase.js"></script>
+<script src="/assets/js/partials.js"></script>
+
+<script type="module">
+  // header/footer 주입 완료까지 보장
+  await window.loadPartials();
+  // 그 다음에 지갑 기능 로드
+  await import("/assets/js/header-wallet.js");
+</script>
+
+<script type="module" src="/assets/js/pages/admin.js"></script>
 </body>
 </html>

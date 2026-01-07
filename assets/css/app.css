@@ -1,140 +1,6 @@
 .page { min-height: 100vh; }
-.container { max-width: 980px; margin: 0 auto; padding: 18px; }
-.topbar {
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 14px 18px; border-bottom: 1px solid var(--border);
-  background: rgba(255,255,255,.8); backdrop-filter: blur(10px);
-}
-.brand { display:flex; align-items:center; gap:10px; text-decoration:none; color: var(--text); }
-.brand__logo { height: 28px; }
-.brand__name { font-weight: 700; }
 
-.h2 { font-size: 18px; font-weight: 700; }
-.muted { color: var(--muted); margin-top: 6px; line-height: 1.4; }
-
-.hr { height:1px; background: var(--border); margin: 16px 0; }
-.row { display:flex; gap:12px; align-items:center; }
-.row-between { justify-content: space-between; }
-
-.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
-
-.box { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fff; }
-.label { font-size: 12px; color: var(--muted); }
-.value { font-size: 16px; margin-top: 8px; }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; }
-
-.input {
-  width: 100%;
-  padding: 12px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  outline: none;
-  background: #fff;
-}
-.input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(79,124,255,.12); }
-
-.pill {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.note { font-size: 13px; color: var(--muted); }
-.note.ok { color: #0f766e; }
-.note.bad { color: #b91c1c; }
-
-/* ===== Header ===== */
-.site-header {
-  background: #fff;
-  border-bottom: 1px solid var(--border);
-}
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 64px;
-}
-
-.logo-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-img {
-  height: 32px;
-}
-
-.logo-text {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.nav {
-  display: flex;
-  gap: 16px;
-}
-
-.nav a {
-  text-decoration: none;
-  color: var(--text);
-  font-size: 14px;
-}
-
-.nav a:hover {
-  color: var(--primary);
-}
-
-/* ===== Main ===== */
-.site-main {
-  padding: 32px 0;
-}
-
-.hero {
-  margin-bottom: 32px;
-}
-
-.hero h1 {
-  font-size: 28px;
-  margin-bottom: 12px;
-}
-
-.hero-desc {
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.market h2 {
-  font-size: 20px;
-  margin-bottom: 12px;
-}
-
-/* ===== Footer ===== */
-.site-footer {
-  border-top: 1px solid var(--border);
-  background: #fafafa;
-  margin-top: 40px;
-}
-
-.footer-inner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 0;
-}
-
-.footer-text {
-  font-size: 12px;
-  color: var(--muted);
-  text-align: right;
-}
-
+/* ===== Theme Vars (single source) ===== */
 :root{
   --bg: #070A12;
   --card: rgba(255,255,255,0.06);
@@ -144,19 +10,80 @@
   --line: rgba(255,255,255,0.12);
   --accent: #8A7DFF;
   --accent2: #34D3FF;
+
   --bad: #ff4d6d;
   --ok: #22c55e;
+
+  /* input glass */
+  --glass: rgba(255,255,255,0.06);
+  --glass2: rgba(255,255,255,0.10);
+  --glassBorder: rgba(255,255,255,0.14);
+  --glassBorder2: rgba(255,255,255,0.22);
+
+  /* onchain neon */
+  --neon: #39ff14;
 }
 
+/* ===== Base ===== */
 body{
-  background: radial-gradient(1200px 600px at 15% -10%, rgba(138,125,255,0.35), transparent 55%),
-              radial-gradient(1000px 500px at 90% 0%, rgba(52,211,255,0.22), transparent 60%),
-              var(--bg);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(138,125,255,0.35), transparent 55%),
+    radial-gradient(1000px 500px at 90% 0%, rgba(52,211,255,0.22), transparent 60%),
+    var(--bg);
   color: var(--text);
 }
 
-.container, .main-wrap { max-width: 980px; }
+/*
+  ===== Layout (Center Consistency) =====
+  header / main / footer 모두 동일한 폭 + 중앙정렬
+*/
+.layout-wrap,
+.main-wrap,
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
 
+/* ===== Common UI ===== */
+.hr{
+  height:1px;
+  background: var(--line);
+  margin: 16px 0;
+}
+
+.muted{
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.k{
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .2px;
+}
+.v{ color: var(--text); }
+
+.mono{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pill{
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(138,125,255,0.12);
+  color: rgba(138,125,255,0.95);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+.note{ font-size: 13px; color: var(--muted); }
+.note.ok{ color: var(--ok); }
+.note.bad{ color: var(--bad); }
+
+/* ===== Cards / Panels ===== */
 .card{
   background: linear-gradient(180deg, var(--card2), var(--card));
   border: 1px solid var(--line);
@@ -165,26 +92,23 @@ body{
   padding: 16px;
 }
 
-.hr{
-  height:1px;
-  background: var(--line);
-  margin: 16px 0;
+.panel{
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+  border-radius: 18px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.35);
 }
 
+/* ===== Typography blocks ===== */
 .block-title{
   font-size: 28px;
   letter-spacing: -0.3px;
 }
-
 .block-text{
   color: var(--muted);
 }
 
-.k{ color: var(--muted); font-size: 12px; }
-.v{ color: var(--text); }
-
-.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-
+/* ===== Buttons ===== */
 .btn{
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(138,125,255,0.25), rgba(138,125,255,0.10));
@@ -193,58 +117,188 @@ body{
   padding: 10px 14px;
   cursor: pointer;
 }
-
 .btn:hover{
   border-color: rgba(138,125,255,0.55);
   box-shadow: 0 0 0 4px rgba(138,125,255,0.10);
 }
 
-.btn.secondary{
-  background: rgba(255,255,255,0.06);
+/* ===== Onchain (Neon) ===== */
+.onchain{
+  color: var(--neon) !important;
+  text-shadow: 0 0 10px rgba(57,255,20,0.35);
 }
 
-.btn:disabled{
-  opacity: 0.4;
-  cursor: not-allowed;
+/* =========================
+   Form / Inputs (single)
+   ========================= */
+.form-grid,
+.form-grid *{
+  box-sizing: border-box;
 }
 
-.input, input, select{
+.form-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
   width: 100%;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.05);
+  max-width: 100%;
+}
+.form-grid .full{ grid-column: 1 / -1; }
+.form-grid > div{ min-width: 0; }
+
+@media (max-width: 860px){
+  .form-grid{ grid-template-columns: 1fr; }
+}
+
+.input,
+select.input,
+input.input{
+  width:100%;
+  max-width:100%;
+  height:44px;
+  display:block;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid var(--glassBorder);
+  background: linear-gradient(180deg, var(--glass2), var(--glass));
   color: var(--text);
-  border-radius: 12px;
-  padding: 10px 12px;
   outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .06s ease;
+  box-shadow:
+    0 10px 30px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-input:focus, select:focus{
-  border-color: rgba(52,211,255,0.6);
-  box-shadow: 0 0 0 4px rgba(52,211,255,0.10);
+.input::placeholder{
+  color: rgba(255,255,255,0.35);
 }
 
-.note{
-  border-radius: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.06);
-  color: var(--text);
+.input:hover{
+  border-color: var(--glassBorder2);
 }
 
-.note.ok{ border-color: rgba(34,197,94,0.5); }
-.note.bad{ border-color: rgba(255,77,109,0.6); color: #ffd1d9; }
-
-.pill{
-  display:inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,0.06);
-  color: var(--muted);
+.input:focus{
+  border-color: rgba(57,255,20,0.55);
+  box-shadow:
+    0 0 0 3px rgba(57,255,20,0.10),
+    0 14px 40px rgba(0,0,0,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-.top-header, header{
-  background: rgba(0,0,0,0.20);
-  border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(10px);
+/* select 화살표 + 높이 통일 */
+select.input{
+  appearance: none;
+  line-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+
+  background-image:
+    linear-gradient(180deg, var(--glass2), var(--glass)),
+    linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.55) 50%),
+    linear-gradient(135deg, rgba(255,255,255,0.55) 50%, transparent 50%);
+  background-position:
+    0 0,
+    calc(100% - 18px) 18px,
+    calc(100% - 12px) 18px;
+  background-size:
+    100% 100%,
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
 }
+/* =========================
+   Profile Form Hotfix Pack
+   (inputs overflow + select options + button spacing)
+   ========================= */
+
+/* 1) 프레임 밖으로 삐져나감 방지: 전역 box-sizing */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* 카드/패널 내부 컨테이너가 줄어들 때 자식이 튀어나오는 현상 방지 */
+.card, .panel, .container, .main-wrap, .layout-wrap { min-width: 0; }
+.card-inner, .form-grid, .grid2 { min-width: 0; }
+
+/* 2열 그리드 안에서 각 칸이 줄어들 때도 overflow 방지 */
+.grid2 > div, .form-grid > div { min-width: 0; }
+
+/* input/select 공통: 폭/높이/패딩 통일 + 프레임 밖 방지 */
+.input,
+input.input,
+select.input,
+textarea.input {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+}
+
+/* textarea만 높이 예외 */
+textarea.input {
+  height: auto;
+  min-height: 92px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+/* select의 line-height/폰트 차이로 높이가 들쑥날쑥한 현상 방지 */
+select.input {
+  line-height: 46px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* select가 카드 밖으로 밀려나오는 경우(특히 iOS/크롬 일부) 예방 */
+select.input { min-width: 0; }
+
+/* 2) 은행 펼침 목록(옵션) 색상: 기본 흰 배경 때문에 글씨 안보이는 문제 해결 */
+select.input option {
+  background: #0b1020;   /* 어두운 배경 */
+  color: rgba(255,255,255,0.92);
+}
+
+/* 일부 브라우저에서 optgroup도 필요 */
+select.input optgroup {
+  background: #0b1020;
+  color: rgba(255,255,255,0.80);
+}
+
+/* 3) 버튼 유격/높이 통일: 더 세련되게 */
+.btn {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 14px;
+}
+
+/* 버튼이 여러 개 붙는 줄: gap 적용 */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.row-between {
+  justify-content: space-between;
+}
+
+/* 버튼 그룹이 오른쪽에 모일 때 보기 좋게 */
+.btn-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* 모바일에서 버튼이 너무 빽빽하면 줄바꿈 허용 */
+@media (max-width: 520px){
+  .row { gap: 10px; }
+  .btn { width: 100%; }
+  .btn-group { width: 100%; }
+}
+
+/* 입력 섹션(구분선 아래) 간격 살짝 고급스럽게 */
+.section-gap { margin-top: 14px; }
+.hr { margin: 18px 0; }
+
+/* 보조 텍스트 가독성 */
+.hint, .note, .muted { line-height: 1.5; }

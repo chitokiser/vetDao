@@ -1,0 +1,2 @@
+js 전역방식으로 통일
+window.CONFIG =

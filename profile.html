@@ -1,6 +1,9 @@
+<!-- /profile.html -->
 <!doctype html>
 <html lang="ko">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>프로필 · 판매자 연락처 관리 - VET DAO</title>
 
   <!-- 공통 head 로드 -->
@@ -11,20 +14,18 @@
       .catch(() => {});
   </script>
 </head>
-<body>
+<body class="dark">
 
-  <!-- 헤더 -->
   <div id="site-header"></div>
 
-  <!-- 메인 -->
   <main class="site-main">
     <div class="container">
 
       <section class="hero">
         <h1>프로필 / 판매자 연락처</h1>
         <p class="hero-desc">
-          판매자는 <b>카카오톡 또는 텔레그램 ID를 1회 등록</b>해야 판매 등록이 가능합니다.<br />
-          등록 후에는 언제든지 수정할 수 있습니다.
+          판매등록을 하려면 SNS(카카오톡 또는 텔레그램) 1개 이상을 등록해야 합니다.<br />
+          SNS/계좌/장소는 모두 파이어베이스에 저장됩니다.
         </p>
       </section>
 
@@ -34,74 +35,148 @@
         <div class="grid2">
           <div>
             <div class="label">내 지갑 주소</div>
-            <div class="value mono" id="myAddr">-</div>
+            <div class="value mono onchain" id="myAddr">-</div>
           </div>
           <div>
-            <div class="label">등록 상태</div>
+            <div class="label">상태</div>
             <div class="value" id="status">미연결</div>
           </div>
         </div>
 
         <div class="hr"></div>
 
-        <!-- 연락처 입력 -->
-        <div class="grid2">
+        <!-- SNS 섹션 -->
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <div>
+            <div class="h2">SNS 섹션 (파이어베이스 저장)</div>
+            <div class="muted" style="font-size:12px; margin-top:4px;">
+              카카오톡 또는 텔레그램 중 1개 이상 필수
+            </div>
+          </div>
+          <div class="pill">저장 위치: <span class="mono onchain">users/{지갑주소}</span></div>
+        </div>
+
+        <div style="margin-top:12px;" class="grid2">
           <div>
             <div class="label">카카오톡 ID</div>
-            <input
-              id="kakaoId"
-              class="input"
-              type="text"
-              placeholder="예: chito54"
-            />
+            <input id="kakaoId" class="input" type="text" placeholder="예: herix" />
           </div>
 
           <div>
             <div class="label">텔레그램 ID</div>
-            <input
-              id="telegramId"
-              class="input"
-              type="text"
-              placeholder="예: @yourid"
-            />
+            <input id="telegramId" class="input" type="text" placeholder="예: @yourid" />
           </div>
         </div>
 
-        <div class="hint" style="margin-top:8px;">
-          · 둘 중 하나만 입력해도 됩니다<br />
-          · 연락처는 매매 페이지에서 공개됩니다
+        <div class="muted" style="margin-top:10px; font-size:12px; line-height:1.5;">
+          · SNS 저장은 블록체인 트랜잭션이 발생하지 않습니다<br />
+          · 저장 후 판매등록이 가능합니다
+        </div>
+
+        <div class="row row-between" style="margin-top:12px; flex-wrap:wrap;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn secondary" id="btnConnect">지갑 연결</button>
+            <button class="btn secondary" id="btnLoad">불러오기</button>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn" id="btnSave">저장(파이어베이스)</button>
+          </div>
         </div>
 
         <div class="hr"></div>
 
-        <!-- 버튼 -->
-        <div class="row row-between">
-          <div>
-            <button class="btn secondary" id="btnConnect">지갑 연결</button>
-          </div>
-          <div>
-            <button class="btn" id="btnSave">연락처 등록</button>
+        <!-- 계좌 섹션 -->
+        <div>
+          <div class="h2">계좌 섹션 (파이어베이스 저장)</div>
+          <div class="muted" style="font-size:12px; margin-top:6px;">
+            SNS/계좌/장소는 users/{지갑주소} 문서로 저장됩니다.
           </div>
         </div>
 
-        <!-- 상태 메시지 -->
-        <div id="note" class="note" style="margin-top:12px;"></div>
+        <div class="grid2" style="margin-top:12px;">
+          <div style="grid-column:1 / -1;">
+            <div class="label">대면 거래 가능 장소(가능할 경우)</div>
+            <input id="meetPlace" class="input" type="text"
+              placeholder="예: 하노이 오션파크2 / 다낭 미케비치 근처 카페 등" />
+          </div>
+
+          <div>
+            <div class="label">한국 은행 선택</div>
+            <select class="input" id="krBank">
+              <option value="">선택</option>
+              <option>국민은행</option>
+              <option>신한은행</option>
+              <option>우리은행</option>
+              <option>하나은행</option>
+              <option>기업은행</option>
+              <option>농협</option>
+              <option>카카오뱅크</option>
+              <option>토스뱅크</option>
+              <option>새마을금고</option>
+              <option>우체국</option>
+              <option>기타</option>
+            </select>
+          </div>
+
+          <div>
+            <div class="label">한국 계좌번호</div>
+            <input id="krAccount" class="input mono" type="text" placeholder="예: 110-123-456789" />
+          </div>
+
+          <div>
+            <div class="label">베트남 은행 선택</div>
+            <select class="input" id="vnBank">
+              <option value="">선택</option>
+              <option>Vietcombank</option>
+              <option>VietinBank</option>
+              <option>BIDV</option>
+              <option>ACB</option>
+              <option>Techcombank</option>
+              <option>MB Bank</option>
+              <option>Sacombank</option>
+              <option>VPBank</option>
+              <option>SHB</option>
+              <option>TPBank</option>
+              <option>OCB</option>
+              <option>기타</option>
+            </select>
+          </div>
+
+          <div>
+            <div class="label">베트남 계좌번호</div>
+            <input id="vnAccount" class="input mono" type="text" placeholder="예: 0123456789" />
+          </div>
+        </div>
+
+        <div class="row row-between" style="margin-top:12px; flex-wrap:wrap;">
+          <div class="muted" style="font-size:12px;">
+            저장 키: users/<span class="mono onchain" id="userDocKey">-</span>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn" id="btnSave2">저장(파이어베이스)</button>
+          </div>
+        </div>
+
+        <div id="note" class="note" style="margin-top:12px; display:none;"></div>
 
       </section>
 
     </div>
   </main>
 
-  <!-- 푸터 -->
   <div id="site-footer"></div>
 
-  <!-- partials 로드 -->
-<script src="/assets/js/config.js"></script>
-<script src="/assets/js/partials.js"></script>
-<script>
-  if (window.loadPartials) window.loadPartials();
-</script>
+  <!-- scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+  <script src="/assets/js/config.js"></script>
+  <script type="module" src="/assets/js/firebase.js"></script>
+  <script src="/assets/js/partials.js"></script>
 
+  <script type="module">
+    await window.loadPartials();
+    await import("/assets/js/header-wallet.js");
+  </script>
 
+  <script type="module" src="/assets/js/pages/profile.js"></script>
 </body>
 </html>

@@ -1,3 +1,5 @@
+// \assets\js\partials\header.js
+
 import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.min.js";
 import { connectWallet, provider, signer, account } from "../web3.js";
 

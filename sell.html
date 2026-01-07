@@ -1,3 +1,4 @@
+<!-- /sell.html -->
 <!doctype html>
 <html lang="ko">
 <head>
@@ -5,137 +6,113 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VET DAO - 판매등록</title>
 
+  <link rel="icon" href="/assets/img/favicon.png" />
   <link rel="stylesheet" href="/assets/css/reset.css" />
   <link rel="stylesheet" href="/assets/css/theme.css" />
   <link rel="stylesheet" href="/assets/css/app.css" />
-  <link rel="icon" href="data:," />
-
-  <style>
-    .debug-box{
-      margin-top:12px;
-      padding:12px;
-      border:1px solid var(--line);
-      border-radius:12px;
-      background:rgba(0,0,0,0.18);
-      color:var(--muted);
-      font-size:12px;
-      white-space:pre-wrap;
-    }
-    input, select {
-      width:100%;
-      padding:12px;
-      border-radius:12px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,0.06);
-      color:var(--text);
-      outline:none;
-    }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .row1 { display:grid; grid-template-columns:1fr; gap:10px; }
-  </style>
 </head>
-<body>
+
+<body class="dark">
   <div class="page">
     <div id="site-header"></div>
 
     <main class="site-main">
       <div class="main-wrap">
-        <div class="block-title">판매등록</div>
-        <div class="block-text" style="margin-top:6px;">
-          HEX 또는 USDT를 에스크로에 예치하고, KRW/VND 오프체인 결제를 받는 거래를 등록합니다.
-        </div>
+        <section class="hero">
+          <div class="block-title">판매등록</div>
+          <div class="block-text" style="margin-top:8px;">
+            판매할 토큰(HEX 또는 USDT) 선택 후, KRW/VND 결제 통화를 선택하여 등록하세요.
+          </div>
+
+          <div class="note" style="margin-top:12px; display:block;">
+            안내: 판매등록 전에 프로필에서 SNS(카카오/텔레그램 등) 최소 1개를 등록해야 합니다. (파이어베이스 저장)
+            <span style="display:inline-block; width:10px;"></span>
+            <a class="btn" href="/profile.html" style="padding:6px 10px; font-size:12px;">프로필로 가기</a>
+          </div>
+        </section>
 
         <div class="hr"></div>
 
-        <div class="card">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">
+        <section class="panel" style="margin-top:14px;">
+          <div class="panel-top">
             <div>
-              <div class="k">지갑 상태</div>
-              <div class="v mono" id="walletLine">미연결</div>
+              <div class="muted" style="margin-top:2px;">
+                지갑을 연결한 뒤 판매등록을 진행하세요.
+              </div>
             </div>
-            <div style="display:flex; gap:8px;">
-              <button class="btn" id="btnConnect">지갑 연결</button>
-              <button class="btn" id="btnSubmit">판매등록</button>
+
+            <div class="actions" style="display:flex; gap:10px;">
+              <button class="btn" id="btnConnect">연결됨/지갑연결</button>
+              <button class="btn primary" id="btnSubmit">판매등록</button>
             </div>
           </div>
 
-          <div id="note" class="note" style="margin-top:10px; display:none;"></div>
-        </div>
+          <div class="walletbar" style="margin-top:10px;">
+            <div class="pill">지갑 상태: <span id="walletLine" class="onchain">미연결</span></div>
+          </div>
 
-        <div class="card" style="margin-top:12px;">
-          <div class="row">
+          <div id="note" class="note" style="display:none; margin-top:10px;"></div>
+
+          <div class="hr"></div>
+
+          <div class="form-grid">
             <div>
-              <div class="k">토큰</div>
-              <select id="token">
+              <div class="k">판매할 토큰(HEX 또는 USDT)</div>
+              <select class="input" id="token">
                 <option value="HEX">HEX</option>
                 <option value="USDT">USDT</option>
               </select>
             </div>
+
             <div>
-              <div class="k">결제통화</div>
-              <select id="fiat">
+              <div class="k">결제 받을 통화 선택</div>
+              <select class="input" id="fiat">
                 <option value="KRW">KRW</option>
                 <option value="VND">VND</option>
               </select>
             </div>
-          </div>
 
-          <div class="row" style="margin-top:10px;">
             <div>
-              <div class="k">판매 수량</div>
-              <input id="amount" placeholder="예: 10" inputmode="decimal" />
+              <div class="k">판매할 토큰 수량</div>
+              <input class="input mono" id="amount" value="10" placeholder="예: 10" />
             </div>
-            <div>
-              <div class="k">개당 가격</div>
-              <input id="unitPrice" placeholder="예: 1200" inputmode="decimal" />
-            </div>
-          </div>
 
-          <div class="row1" style="margin-top:10px;">
             <div>
-              <div class="k">리스트 표시용 seller SNS (선택)</div>
-              <input id="sellerSns" placeholder="예: kakao: chito54 / tg: @id" />
+              <div class="k">토큰 개당 가격</div>
+              <input class="input mono" id="unitPrice" value="1380" placeholder="예: 1380" />
+            </div>
+
+            <div class="full">
+              <div class="k">예상 총액</div>
+              <div class="pill onchain" id="totalFiat" style="margin-top:8px;">-</div>
             </div>
           </div>
+        </section>
 
-          <div style="margin-top:10px; color:var(--muted); font-size:13px;">
-            예상 총액: <span id="totalFiat">-</span>
+        <div class="hr"></div>
+
+        <div class="panel" style="margin-top:14px;">
+          <div class="muted" style="font-size:12px; line-height:1.5;">
+            debug:
+            <pre id="dbg" style="white-space:pre-wrap; margin-top:10px;"></pre>
           </div>
         </div>
-
-        <div class="debug-box" id="debug">debug: page loaded</div>
       </div>
     </main>
 
     <div id="site-footer"></div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
   <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/contract.js"></script>
+  <script type="module" src="/assets/js/firebase.js"></script>
   <script src="/assets/js/partials.js"></script>
+  <script type="module" src="/assets/js/header-wallet.js"></script>
   <script>
-    // 화면에 안 뜨는 문제를 막기 위한 전역 디버그
-    (function(){
-      const dbg = (msg) => {
-        const el = document.getElementById("debug");
-        if (el) el.textContent += "\n" + msg;
-        console.log(msg);
-      };
-      window.__dbg = dbg;
-
-      window.addEventListener("error", (ev) => {
-        dbg("window.error: " + ev.message);
-      });
-      window.addEventListener("unhandledrejection", (ev) => {
-        const r = ev.reason;
-        dbg("unhandledrejection: " + (r?.message || String(r)));
-      });
-
-      if (window.loadPartials) window.loadPartials();
-      dbg("partials loaded call done");
-    })();
+    window.loadPartials && window.loadPartials();
   </script>
 
-  <!-- 중요: sell.js는 반드시 type="module" 로드 -->
   <script type="module" src="/assets/js/pages/sell.js"></script>
 </body>
 </html>
