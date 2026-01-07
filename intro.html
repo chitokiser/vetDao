@@ -1,0 +1,605 @@
+<!-- /intro.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VET EX - 소개(Whitepaper Intro)</title>
+
+  <link rel="stylesheet" href="assets/css/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+
+  <!-- 프로젝트 공통 -->
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/partials.js"></script>
+
+  <style>
+    .intro-hero{
+      padding: 22px 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    }
+    .intro-badge{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      padding:8px 12px;
+      border-radius: 999px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .intro-title{
+      margin-top: 14px;
+      font-size: 26px;
+      letter-spacing: -0.3px;
+      line-height: 1.25;
+    }
+    .intro-sub{
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.65;
+      max-width: 860px;
+    }
+
+    .pill-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top: 14px;
+    }
+    .pill{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,0.04);
+      border-radius: 999px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--text);
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    .toc{
+      margin-top: 14px;
+      border:1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 14px 10px 14px;
+      background: rgba(255,255,255,0.03);
+    }
+    .toc a{
+      display:block;
+      padding: 8px 10px;
+      border-radius: 10px;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .toc a:hover{ background: rgba(255,255,255,0.05); color: var(--text); }
+
+    .section{
+      margin-top: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.03);
+    }
+    .section h2{
+      font-size: 18px;
+      margin: 0 0 10px 0;
+      letter-spacing: -0.2px;
+    }
+    .section p{
+      margin: 8px 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .grid-2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    @media (max-width: 860px){
+      .grid-2{ grid-template-columns: 1fr; }
+    }
+
+    .card{
+      border:1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(0,0,0,0.08);
+    }
+    .card .k{
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .card .v{
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 14px;
+    }
+
+    .flow{
+      display:grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    @media (max-width: 900px){
+      .flow{ grid-template-columns: 1fr; }
+    }
+    .step{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,0.03);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 92px;
+    }
+    .step .n{
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .step .t{
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    .mini{
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+
+    .btn-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top: 14px;
+    }
+    .btn{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      text-decoration:none;
+      font-size: 14px;
+    }
+    .btn:hover{ background: rgba(255,255,255,0.08); }
+    .btn.primary{ background: rgba(255,255,255,0.12); }
+
+    .hr2{
+      height:1px;
+      background: var(--line);
+      opacity: .9;
+      margin: 14px 0;
+    }
+
+    .anchor{
+      scroll-margin-top: 90px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <!-- 헤더 자리 -->
+    <div id="site-header"></div>
+
+    <div class="main-wrap">
+      <div class="intro-hero">
+        <div class="intro-badge">VET EX Whitepaper · Intro</div>
+
+        <div class="intro-title">
+          실물·법정화폐 거래를 위한<br/>
+          블록체인 기반 P2P 에스크로 거래 플랫폼
+        </div>
+
+        <div class="intro-sub">
+          VET EX는 법정화폐(P2P) 거래 과정에서 발생하는 중개 리스크를 스마트컨트랙트가 대신 보증하는 탈중앙 거래 플랫폼입니다.
+          USDT 및 HEX 기반 에스크로 거래를 지원하며, 거래 수수료는 vetBank에 누적되어 주 1회 VET 보유자에게 환원됩니다.
+          HEX 거래 시 구매자에게 VET 보너스를 자동 지급하여 DAO 수익을 참여자에게 정의롭게 배분합니다.
+        </div>
+
+        <div class="pill-row" aria-label="핵심 특징">
+          <div class="pill">중앙 운영자 없이 거래 보호</div>
+          <div class="pill">USDT / HEX 에스크로</div>
+          <div class="pill">HEX 거래 시 VET 보너스</div>
+          <div class="pill">수수료 수익 주 1회 환원</div>
+          <div class="pill">오프체인 정보는 Firebase</div>
+        </div>
+
+        <div class="btn-row">
+          <a class="btn primary" href="swap.html">거래 시작</a>
+          <a class="btn" href="treasury.html">vetBank / Treasury</a>
+          <a class="btn" href="tokendetail.html?id=vet">VET 토큰 보기</a>
+        </div>
+
+        <div class="mini">
+          안내: 법정화폐·실물 거래는 각 국가의 법령 및 규정을 준수해야 하며, 사용자는 거래 상대와 지급 수단을 스스로 확인해야 합니다.
+        </div>
+      </div>
+
+      <div class="toc" aria-label="목차">
+        <a href="#s1">1. 플랫폼 개요</a>
+        <a href="#s2">2. 해결하려는 문제</a>
+        <a href="#s3">3. VET EX의 해결 방식</a>
+        <a href="#s4">4. 거래 흐름 (User Flow)</a>
+        <a href="#s5">5. 토큰 구조 및 경제 모델</a>
+        <a href="#s6">6. vetBank 구조</a>
+        <a href="#s7">7. DAO 거버넌스</a>
+        <a href="#s8">8. 보안 및 리스크 관리</a>
+        <a href="#s9">9. 확장 로드맵</a>
+        <a href="#s10">10. 결론</a>
+      </div>
+
+      <div id="s1" class="section anchor">
+        <h2>1. 플랫폼 개요</h2>
+        <p>
+          VET EX는 법정화폐(P2P) 거래의 복잡한 과정에 대한 문제를 해결하기 위한 탈중앙 거래 플랫폼입니다.
+          USDT 및 HEX 토큰 거래에서 판매자와 구매자 사이의 중개 리스크를 스마트컨트랙트가 대신 보증하며,
+          거래 수수료는 생태계 토큰(VET)의 가치 상승과 보상 구조로 연결됩니다.
+        </p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">핵심 특징</div>
+            <div class="v">
+              - 중앙 운영자 없이 스마트컨트랙트로 거래 보호<br/>
+              - USDT / HEX 기반 에스크로 거래 지원<br/>
+              - HEX 거래 시 구매자에게 VET 보너스 자동 지급<br/>
+              - 거래 수수료는 vetBank에 누적되며 주 1회 VET 보유자에게 환원<br/>
+              - 오프체인 정보(SNS, 계좌)는 Firebase로 관리하여 UX 최적화
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">핵심 목표</div>
+            <div class="v">
+              - 중앙 제거 + 신뢰 강화<br/>
+              - 수수료 수익을 참여자에게 환류<br/>
+              - 오프체인 UX 최적화와 온체인 비용 절감
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s2" class="section anchor">
+        <h2>2. 해결하려는 문제</h2>
+        <p>기존 P2P 코인·법정화폐 거래의 구조적 문제는 다음과 같습니다.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">문제</div>
+            <div class="v">
+              - 중앙거래소 가입 절차의 어려움<br/>
+              - 입금 후 잠수, 중복 입금, 허위 클레임<br/>
+              - 중앙 중개자의 임의 개입 위험<br/>
+              - 수수료 수익이 운영사에 집중
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">VET EX의 해결</div>
+            <div class="v">
+              - 토큰은 컨트랙트에 에스크로 예치<br/>
+              - 상태: OPEN → TAKEN → PAID → RELEASED로 명확히 관리<br/>
+              - 구매자·판매자·중재자 권한 분리<br/>
+              - 수수료는 VET 생태계로 환류
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s3" class="section anchor">
+        <h2>3. VET EX의 해결 방식</h2>
+        <p>
+          VET EX는 중앙을 제거하되 신뢰를 강화하는 구조를 목표로 설계되었습니다.
+          핵심은 자금/거래/정보 레이어의 분리입니다.
+        </p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">레이어 분리</div>
+            <div class="v">
+              1) 자금 신뢰 레이어<br/>
+              2) 거래 행위 레이어<br/>
+              3) 정보·UX 레이어
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">원칙</div>
+            <div class="v">
+              - 운영자는 자금 이동 권한 없음<br/>
+              - 온체인은 자금과 결과 기록<br/>
+              - 오프체인은 개인정보·메시지·평판 처리
+            </div>
+          </div>
+        </div>
+
+        <div class="hr2"></div>
+
+        <div class="card">
+          <div class="k">3-1. 스마트컨트랙트 기반 에스크로</div>
+          <div class="v">
+            - 구매자가 USDT 또는 HEX를 에스크로 컨트랙트에 예치<br/>
+            - 판매자는 오프체인으로 실물 또는 법정화폐 전달<br/>
+            - 구매자 확인 시 스마트컨트랙트가 자동 정산<br/>
+            - 분쟁 발생 시, 명시된 조건에 따라 환불 또는 정산 실행<br/><br/>
+            중앙 운영자가 자금을 보관하지 않으며, 운영자는 자금 이동 권한을 갖지 않습니다.
+          </div>
+        </div>
+
+        <div class="hr2"></div>
+
+        <div class="card">
+          <div class="k">3-2. 오프체인 정보 분리 구조</div>
+          <div class="v">
+            - 계좌 정보, SNS, 메신저 ID<br/>
+            - 거래 상태 메시지<br/>
+            - 사용자 평판 및 히스토리<br/><br/>
+            오프체인 정보는 지갑 주소를 키값으로 Firebase에 관리되며,
+            블록체인에는 거래 결과/금액/해시만 기록됩니다.<br/><br/>
+            이를 통해 개인정보 노출 최소화, 빠른 UX, 온체인 비용 절감을 동시에 달성합니다.
+          </div>
+        </div>
+      </div>
+
+      <div id="s4" class="section anchor">
+        <h2>4. 거래 흐름 (User Flow)</h2>
+
+        <div class="flow" aria-label="기본 거래 흐름">
+          <div class="step">
+            <div class="n">1. 판매자</div>
+            <div class="t">거래 조건 등록 (금액, 받고 싶은 통화, 거래 수단, 한도)</div>
+          </div>
+          <div class="step">
+            <div class="n">2. 구매자</div>
+            <div class="t">거래 선택. 판매 목적의 USDT/HEX는 컨트랙트에 예치되어 안전</div>
+          </div>
+          <div class="step">
+            <div class="n">3. 오프체인 결제</div>
+            <div class="t">은행 이체 또는 대면거래 가능. 법정화폐/실물 거래 진행</div>
+          </div>
+          <div class="step">
+            <div class="n">4. 거래 확정</div>
+            <div class="t">구매자 확인 → 자동 정산. 수수료 처리. HEX 거래 시 VET 보상</div>
+          </div>
+        </div>
+
+        <div class="hr2"></div>
+
+        <div class="card">
+          <div class="k">4-2. 분쟁 발생 시</div>
+          <div class="v">
+            - 일정 시간 내 확인 미이행 시<br/>
+            - 컨트랙트 조건에 따라 자동 환불 또는 관리자 개입 트리거<br/><br/>
+            관리자는 판단자가 아니라 조건 실행을 보조하는 역할만 수행합니다.
+          </div>
+        </div>
+      </div>
+
+      <div id="s5" class="section anchor">
+        <h2>5. 토큰 구조 및 경제 모델</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">5-1. VET 토큰의 역할</div>
+            <div class="v">
+              VET는 단순 수수료 토큰이 아니라 플랫폼 수익 참여 권리를 의미합니다.<br/><br/>
+              - 거래 보너스 지급<br/>
+              - 수수료 환원 대상<br/>
+              - DAO 의사결정 참여<br/>
+              - 장기 보유 인센티브
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">5-2. 거래 수수료 구조</div>
+            <div class="v">
+              - 모든 거래에는 소정의 수수료 발생<br/>
+              - 수수료는 즉시 vetBank로 적립<br/>
+              - 운영비 차감 후 잔여 수익 누적<br/><br/>
+              누적 수익은 매주 1회 VET 보유자에게 비례 분배됩니다.
+            </div>
+          </div>
+        </div>
+
+        <div class="hr2"></div>
+
+        <div class="card">
+          <div class="k">5-3. HEX 거래 보너스 구조</div>
+          <div class="v">
+            - HEX 거래 시 구매자는 거래 즉시 VET 보너스 지급<br/>
+            - 지급된 VET는 락업 또는 즉시 유통 선택 가능<br/>
+            - DAO 수익을 실제 거래 참여자에게 재분배<br/><br/>
+            참여 기반 수익 분배 구조로 시장 활성화를 촉진합니다.
+          </div>
+        </div>
+      </div>
+
+      <div id="s6" class="section anchor">
+        <h2>6. vetBank 구조</h2>
+        <p>vetBank는 VET EX의 핵심 수익 허브입니다.</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">기능</div>
+            <div class="v">
+              - 모든 거래 수수료 누적<br/>
+              - 수익 분배 기준 계산<br/>
+              - 장기 수익 풀 형성
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">수익 분배 기준(개념)</div>
+            <div class="v">
+              (잔고 / 스테이킹한 VET) × (1 / 기본값 500)<br/><br/>
+              운영 정책은 DAO 투표로 조정 가능합니다.
+            </div>
+          </div>
+        </div>
+
+        <div class="hr2"></div>
+
+        <div class="card">
+          <div class="k">특징</div>
+          <div class="v">
+            - 단일 관리자 출금 불가<br/>
+            - DAO 규칙에 따른 분배만 가능<br/>
+            - 온체인 잔고 투명 공개<br/><br/>
+            vetBank는 커뮤니티 공동 금고입니다.
+          </div>
+        </div>
+      </div>
+
+      <div id="s7" class="section anchor">
+        <h2>7. DAO 거버넌스</h2>
+        <p>VET EX는 단계적으로 DAO로 전환됩니다.</p>
+
+        <div class="card">
+          <div class="k">DAO에서 결정되는 항목</div>
+          <div class="v">
+            - 수수료 비율 조정<br/>
+            - 보너스 지급 정책<br/>
+            - 분쟁 처리 기준<br/>
+            - 신규 통화·토큰 추가<br/>
+            - 운영 예산 사용<br/><br/>
+            VET 보유량에 따라 투표 가중치가 적용됩니다.
+          </div>
+        </div>
+      </div>
+
+      <div id="s8" class="section anchor">
+        <h2>8. 보안 및 리스크 관리</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">8-1. 스마트컨트랙트 보안</div>
+            <div class="v">
+              - 자금 이동 로직 단순화<br/>
+              - 관리자 권한 최소화<br/>
+              - 재진입 공격 방지 적용
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">8-2. 사용자 리스크 관리</div>
+            <div class="v">
+              - 거래 한도 설정<br/>
+              - 신규 계정 제한<br/>
+              - 평판 기반 거래 노출
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s9" class="section anchor">
+        <h2>9. 확장 로드맵</h2>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="k">1단계</div>
+            <div class="v">
+              - USDT / HEX 에스크로<br/>
+              - 기본 P2P 거래<br/>
+              - vetBank 수익 분배
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">2단계</div>
+            <div class="v">
+              - 다국가 법정화폐 확장<br/>
+              - 실물 자산 거래 템플릿<br/>
+              - 모바일 UI
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px" class="card">
+          <div class="k">3단계</div>
+          <div class="v">
+            - 완전 DAO 전환<br/>
+            - 외부 프로젝트 에스크로 API 제공<br/>
+            - 탈중앙 신원 인증 연동
+          </div>
+        </div>
+      </div>
+
+      <div id="s10" class="section anchor">
+        <h2>10. 결론</h2>
+        <p>
+          VET EX는 실물·법정화폐 거래를 탈중앙 금융 구조로 흡수하는 플랫폼입니다.
+          중앙의 신뢰를 제거하고 수익을 참여자 모두에게 환원하며,
+          거래 그 자체가 DAO의 성장 동력이 되는 구조를 지향합니다.
+        </p>
+        <p>
+          거래를 하면 할수록 플랫폼의 주인이 되는 시장을 목표로 합니다.
+        </p>
+
+        <div class="btn-row">
+          <a class="btn primary" href="https://hexdao.netlify.app/swap.html">VET토큰 거래소</a>
+          <a class="btn" href="https://hexdao.netlify.app/treasury.html">VET토큰 금고</a>
+        </div>
+      </div>
+
+     
+
+    </div>
+
+    <!-- 푸터 자리 -->
+    <div id="site-footer"></div>
+  </div>
+
+  <script>
+    // 헤더/푸터 연결: partials.js 함수명이 뭐든 대응
+    (async () => {
+      // placeholder가 없으면 만들기 (혹시 페이지 템플릿이 바뀌어도 안전)
+      if (!document.getElementById("site-header")) {
+        const h = document.createElement("div");
+        h.id = "site-header";
+        document.body.prepend(h);
+      }
+      if (!document.getElementById("site-footer")) {
+        const f = document.createElement("div");
+        f.id = "site-footer";
+        document.body.appendChild(f);
+      }
+
+      try {
+        // 가장 흔한 케이스들 순서대로 호출
+        if (typeof window.loadPartials === "function") {
+          await window.loadPartials();
+          return;
+        }
+        if (typeof window.renderPartials === "function") {
+          await window.renderPartials();
+          return;
+        }
+        if (typeof window.injectPartials === "function") {
+          await window.injectPartials();
+          return;
+        }
+        if (typeof window.initPartials === "function") {
+          await window.initPartials();
+          return;
+        }
+
+        // 그래도 안되면: partials.js가 커스텀 이벤트를 쓰는 경우 대비
+        document.dispatchEvent(new Event("partials:load"));
+        document.dispatchEvent(new Event("partials:ready"));
+      } catch (e) {
+        console.warn("partials load failed:", e);
+      }
+    })();
+  </script>
+</body>
+</html>
