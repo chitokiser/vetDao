@@ -23,6 +23,8 @@
     // ----- Read -----
     "function nextTradeId() external view returns (uint256)",
     "function getTrade(uint256 tradeId) external view returns (tuple(address seller,address buyer,address token,uint256 amount,uint256 fiatAmount,bytes32 paymentRef,uint64 createdAt,uint64 paidAt,uint8 fiat,uint8 status))",
+    "function feeBps() external view returns (uint16)",
+    "function vetBank() external view returns (address)",
 
     // ----- Events -----
     "event SellerContactRegistered(address indexed seller)",

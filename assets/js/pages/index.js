@@ -57,6 +57,13 @@ function fmtStatusKo(s) {
   return "-";
 }
 
+function fmtStatusColor(s) {
+  // 0=판매중(파랑), 1=거래수락(노랑), 2=입금완료(주황), 3=이체완료(초록), 4=취소(빨강), 5=분쟁중(분홍), 6=분쟁해결(회색)
+  const map = ["#60a5fa", "#fbbf24", "#fb923c", "#22c55e", "#f87171", "#f43f5e", "#94a3b8"];
+  const n = Number(s);
+  return Number.isFinite(n) && map[n] ? map[n] : "var(--muted)";
+}
+
 function symbolFromAddress(addr) {
   const a = (addr || "").toLowerCase();
   const tok = CONFIG?.TOKENS || {};
@@ -75,6 +82,19 @@ function safeNum(x) {
   return Number.isFinite(n) ? n : null;
 }
 
+function calcVetBonus(amountHex, feeBps, price) {
+  // amountHex: HEX 토큰 수량(소수점 포함), feeBps: 수수료 bps, price: BigInt (HEX wei per 1 VET)
+  if (!amountHex || !feeBps || !price || price === 0n) return null;
+  try {
+    const amtStr = Number(amountHex).toFixed(8);
+    const amountWei = ethers.parseUnits(amtStr, 18);
+    const feeWei = amountWei * BigInt(feeBps) / 10_000n;
+    return Number(feeWei / price);
+  } catch {
+    return null;
+  }
+}
+
 function calcTotalFiat(amount, unitPrice) {
   const a = safeNum(amount);
   const p = safeNum(unitPrice);
@@ -86,6 +106,23 @@ function tradesCollectionNameByContract() {
   const addr = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
   if (!addr) return "trades";
   return "trades_" + addr;
+}
+
+async function fetchVetConfig() {
+  if (!ethers || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX || !ABI?.length) return null;
+  try {
+    const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+    const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
+    const [feeBps, vetBankAddr] = await Promise.all([c.feeBps(), c.vetBank()]);
+    if (!vetBankAddr || vetBankAddr === ethers.ZeroAddress) return null;
+    const vetBankAbi = ["function price() external view returns (uint256)"];
+    const price = await new ethers.Contract(vetBankAddr, vetBankAbi, provider).price();
+    if (!price || price === 0n) return null;
+    return { feeBps: Number(feeBps), price };
+  } catch (e) {
+    console.warn("fetchVetConfig failed:", e);
+    return null;
+  }
 }
 
 /*
@@ -115,7 +152,7 @@ async function overrideStatusesFromChain(items, max = 30) {
   return items;
 }
 
-function renderTrades(items, sourceLabel) {
+function renderTrades(items, sourceLabel, vetConfig = null) {
   if (!tradeList) return;
   tradeList.innerHTML = "";
 
@@ -150,8 +187,25 @@ function renderTrades(items, sourceLabel) {
     }
 
     const statusKo = fmtStatusKo(t.status);
+    const statusColor = fmtStatusColor(t.status);
+    const statusHtml = `<span style="color:${statusColor};font-weight:600;">${statusKo}</span>`;
 
-    const line1 = `판매토큰: ${tokenSymbol} / 판매개수: ${amountText} / 판매금액: ${totalFiatText} / 진행상태: ${statusKo}`;
+    let vetBonusText = "";
+    if (tokenSymbol === "HEX" && vetConfig) {
+      const bonus = calcVetBonus(t.amount, vetConfig.feeBps, vetConfig.price);
+      if (bonus !== null && bonus > 0) {
+        vetBonusText = ` / VET보상: +${bonus.toLocaleString()} VET`;
+      }
+    }
+
+    const tokenColor =
+      tokenSymbol === "HEX" ? "#f97316" :
+      tokenSymbol === "USDT" ? "#22c55e" :
+      "var(--muted)";
+
+    const tokenBadgeHtml = `<span style="color:${tokenColor};font-weight:700;">${tokenSymbol}</span>`;
+    const line1Html =
+      `판매토큰: ${tokenBadgeHtml} / 판매개수: ${amountText}${vetBonusText} / 판매금액: ${totalFiatText} / 진행상태: ${statusHtml}`;
 
     const unitPriceText =
       t.unitPrice !== undefined && t.unitPrice !== null && t.unitPrice !== ""
@@ -160,14 +214,14 @@ function renderTrades(items, sourceLabel) {
 
     const line2 = `판매자: ${seller} · 단가: ${unitPriceText}`;
 
-    const card = el("div", { class: "card", style: "margin-top:10px;" }, [
+    const card = el("div", { class: "card", style: `margin-top:10px; border-left:3px solid ${tokenColor};` }, [
       el(
         "div",
         { class: "card-inner", style: "display:flex; justify-content:space-between; gap:12px; align-items:center;" },
         [
           el("div", {}, [
             el("div", { class: "k", style: "font-size:13px; color:var(--muted);" }, [`tradeId #${tradeId}`]),
-            el("div", { class: "v onchain", style: "font-size:15px; margin-top:2px; line-height:1.35;" }, [line1]),
+            el("div", { class: "v onchain", html: line1Html, style: "font-size:15px; margin-top:2px; line-height:1.35;" }, []),
             el("div", { class: "muted", style: "font-size:12px; margin-top:6px;" }, [line2]),
           ]),
           el("a", { class: "btn", href: `/trade.html?id=${encodeURIComponent(tradeId)}` }, ["상세보기"]),
@@ -300,6 +354,7 @@ async function loadFromChainByStorage() {
         seller,
         tokenAddress: tokenAddr,
         tokenSymbol: symbolFromAddress(tokenAddr),
+        amount: amountNum,
         amountStr,
         fiatAmount: Number.isFinite(fiatAmount) ? fiatAmount : String(fiatAmountRaw),
         unitPrice,
@@ -318,13 +373,15 @@ async function loadFromChainByStorage() {
 async function boot() {
   if (!tradeList) return;
 
+  const vetConfig = await fetchVetConfig();
+
   // 1) Firestore(전체) 우선: trades + trades_{contract} 병합
   try {
     const { items: fsItems, sources } = await loadFromFirestoreAll();
     if (fsItems.length > 0) {
       // 표시 상태는 항상 온체인을 우선
       await overrideStatusesFromChain(fsItems, 30);
-      renderTrades(fsItems.slice(0, 30), `Firestore(${sources.join(",")}) + onchain(status override)`);
+      renderTrades(fsItems.slice(0, 30), `Firestore(${sources.join(",")}) + onchain(status override)`, vetConfig);
       return;
     }
   } catch (e) {
@@ -335,7 +392,7 @@ async function boot() {
   try {
     const chainItems = await loadFromChainByStorage();
     if (chainItems.length > 0) {
-      renderTrades(chainItems, "Chain(storage: getTrade)");
+      renderTrades(chainItems, "Chain(storage: getTrade)", vetConfig);
       return;
     }
   } catch (e) {
