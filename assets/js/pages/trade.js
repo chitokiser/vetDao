@@ -317,10 +317,18 @@ function renderActions(ad, chainSt) {
   const timedOut = isTimedOut();
 
   // Hide all first
-  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute"]
+  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute","editBuyAdSection"]
     .forEach(id => { const el = $(id); if (el) el.style.display = "none"; });
 
   const guide = $("actionGuide");
+
+  // BUY ad — OPEN: buyer can edit/cancel
+  if (ad.type === "BUY" && st < 0 && isBuyer) {
+    show("editBuyAdSection");
+    initEditBuyAdForm(ad);
+    setGuide("📢 판매자 모집 중입니다. 환율 변동 시 단가를 수정하거나 광고를 취소할 수 있습니다.", false);
+    return;
+  }
 
   // BUY ad — viewer (potential seller) can accept
   if (ad.type === "BUY" && st < 0 && !isBuyer && me) {
@@ -985,6 +993,69 @@ async function doCancel() {
   }
 }
 
+// BUY ad: 수정 폼 초기화
+function initEditBuyAdForm(ad) {
+  const priceEl   = $("editUnitPrice");
+  const timeoutEl = $("editTimeoutMin");
+  const totalEl   = $("editBuyTotal");
+  const fiat      = fiatLabel(ad.fiat);
+  const amount    = Number(ad.amount || 0);
+
+  if (priceEl)   priceEl.value   = ad.unitPrice || "";
+  if (timeoutEl) timeoutEl.value = ad.timeoutMin || 30;
+
+  function recalc() {
+    const p = Number(priceEl?.value || 0);
+    if (totalEl) totalEl.textContent = p > 0
+      ? `예상 총액: ${Math.floor(amount * p).toLocaleString()} ${fiat}`
+      : "";
+  }
+  priceEl?.addEventListener("input", recalc);
+  recalc();
+}
+
+// BUY ad: 광고 수정 저장
+async function doEditBuyAd() {
+  const newPrice   = Number($("editUnitPrice")?.value || 0);
+  const newTimeout = Number($("editTimeoutMin")?.value || 30);
+  if (!newPrice || newPrice <= 0) return setNote("단가를 올바르게 입력하세요.", true);
+
+  const adDocId = adIdParam || orderId;
+  if (!adDocId) return setNote("광고 ID를 찾을 수 없습니다.", true);
+
+  try {
+    const amount   = Number(adData.amount || 0);
+    const fiatAmt  = Math.floor(amount * newPrice);
+    await updateDoc(doc(db, "ads", String(adDocId)), {
+      unitPrice:  newPrice,
+      fiatAmount: fiatAmt,
+      timeoutMin: newTimeout,
+      updatedAt:  serverTimestamp(),
+    });
+    setNote("광고가 수정되었습니다.");
+    await loadTrade();
+  } catch (e) {
+    setNote(e?.message || String(e), true);
+  }
+}
+
+// BUY ad: 광고 취소 (온체인 없음 — Firestore만)
+async function doCancelBuyAd() {
+  if (!confirm("구매 광고를 취소하시겠습니까?")) return;
+  const adDocId = adIdParam || orderId;
+  if (!adDocId) return setNote("광고 ID를 찾을 수 없습니다.", true);
+  try {
+    await updateDoc(doc(db, "ads", String(adDocId)), {
+      status:    "CANCELED",
+      updatedAt: serverTimestamp(),
+    });
+    setNote("광고가 취소되었습니다.");
+    await loadTrade();
+  } catch (e) {
+    setNote(e?.message || String(e), true);
+  }
+}
+
 // Buyer: cancel (timeout elapsed)
 async function doCancelByBuyer() {
   if (!confirm("타임아웃으로 거래를 취소하시겠습니까? 에스크로된 HEX는 판매자에게 반환됩니다.")) return;
@@ -1084,6 +1155,8 @@ $("btnRelease")?.addEventListener("click",      doRelease);
 $("btnCancelOpen")?.addEventListener("click",   doCancelOpen);
 $("btnCancel")?.addEventListener("click",         doCancel);
 $("btnCancelByBuyer")?.addEventListener("click", doCancelByBuyer);
+$("btnEditBuyAd")?.addEventListener("click",    doEditBuyAd);
+$("btnCancelBuyAd")?.addEventListener("click",  doCancelBuyAd);
 $("btnDispute")?.addEventListener("click",        doDispute);
 $("btnSendMsg")?.addEventListener("click",      () => sendMessage(orderId));
 $("chatInput")?.addEventListener("keydown",     e => { if (e.key === "Enter") sendMessage(orderId); });

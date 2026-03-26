@@ -282,6 +282,34 @@
                   ✖ 광고 취소 · HEX 회수
                 </button>
 
+                <!-- Buyer: edit/cancel BUY ad (no seller yet) -->
+                <div id="editBuyAdSection" style="display:none;">
+                  <div style="font-size:13px; font-weight:600; margin-bottom:10px;">광고 수정</div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <div>
+                      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">HEX 단가</div>
+                      <input class="input mono" id="editUnitPrice" type="number" min="0" step="any" style="font-size:13px; width:100%;" />
+                    </div>
+                    <div>
+                      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">타임아웃(분)</div>
+                      <select class="input" id="editTimeoutMin" style="font-size:13px; width:100%;">
+                        <option value="10">10분</option>
+                        <option value="15">15분</option>
+                        <option value="20">20분</option>
+                        <option value="30">30분</option>
+                        <option value="60">60분</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div id="editBuyTotal" style="font-size:13px; color:var(--muted); margin-bottom:10px;"></div>
+                  <button class="action-btn primary" id="btnEditBuyAd" style="margin-bottom:8px;">
+                    ✏ 광고 수정 저장
+                  </button>
+                  <button class="action-btn danger" id="btnCancelBuyAd">
+                    ✖ 광고 취소
+                  </button>
+                </div>
+
                 <!-- Seller: cancel (trade in progress, timeout elapsed) -->
                 <button class="action-btn danger" id="btnCancel" style="display:none;">
                   ✖ 거래 취소 (판매자)
