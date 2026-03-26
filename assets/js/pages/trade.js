@@ -1,816 +1,1061 @@
 // /assets/js/pages/trade.js
-import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.min.js";
-import { doc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+import {
+  doc, getDoc, setDoc, addDoc, updateDoc,
+  collection, query, orderBy, onSnapshot,
+  serverTimestamp, increment,
+} from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
-// ✅ Firebase 초기화/anon-auth 완료 대기 (firebase.js에서 window.firebaseReady 제공)
-if (window.firebaseReady) {
-  await window.firebaseReady;
-}
+await window.firebaseReady;
 
-const CONFIG = window.CONFIG;
-const ABI = window.ABI;
-const db = window.db;
+const ethers  = window.ethers;
+const CONFIG  = window.CONFIG;
+const ABI     = window.ABI;
+const db      = window.db;
 
 const $ = (id) => document.getElementById(id);
 
-// ----------------------------
-// 기본 상태
-// ----------------------------
-let provider;
-let signer;
-let account;
-
-const VET_EX = CONFIG?.CONTRACT?.vetEX;
-const RPC_URL = CONFIG?.RPC_URL;
-
-const HEX_ADDR = CONFIG?.TOKENS?.HEX?.address || CONFIG?.ADDR?.hex || CONFIG?.CONTRACT?.hex;
-const USDT_ADDR = CONFIG?.TOKENS?.USDT?.address || CONFIG?.ADDR?.usdt || CONFIG?.CONTRACT?.usdt;
-
-const VET_ADDR =
-  CONFIG?.TOKENS?.VET?.address ||
-  CONFIG?.ADDR?.vet ||
-  CONFIG?.CONTRACT?.vet ||
-  "0xff8eCA08F731EAe46b5e7d10eBF640A8Ca7BA3D4";
-
 const ERC20_ABI = [
+  "function allowance(address owner,address spender) view returns (uint256)",
+  "function approve(address spender,uint256 value) returns (bool)",
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-  "function transfer(address,uint256) returns (bool)",
 ];
 
-// ✅ 컨트랙트별 Firestore 컬렉션 분리 (sell.js와 동일 규칙)
-function tradesCollectionName() {
-  const addr = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
-  return addr ? "trades_" + addr : "trades";
+let provider, signer, account;
+let adData   = null;  // Firestore ad doc
+let orderId  = null;  // Firestore orders doc ID
+let chainData = null; // on-chain getTrade result
+let unsubMessages = null;
+
+// ── URL params ────────────────────────────────────────────────────────────────
+const params  = new URLSearchParams(location.search);
+const tradeIdParam = params.get("id");   // SELL: on-chain tradeId
+const adIdParam    = params.get("adId"); // BUY: Firestore doc ID
+const typeParam    = params.get("type"); // "BUY" if BUY ad
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function dbg(msg) {
+  const p = $("dbg");
+  if (p) p.textContent += msg + "\n";
+  console.log("[trade]", msg);
 }
-
-const VETEX_ERRORS = [
-  "error BadStatus()",
-  "error NoTrade()",
-  "error NotSeller()",
-  "error NotBuyer()",
-  "error NotParty()",
-  "error TooEarly()",
-  "error AlreadyRegistered()",
-  "error NotRegistered()",
-  "error TokenZero()",
-  "error AmountZero()",
-  "error FeeTooHigh()",
-  "error ParamTooSmall()",
-  "error NotArbitrator()",
-  "error FlushZero()",
-  "error VetBankNotSet()",
-  "error UsdtNotSet()",
-  "error ZeroAddress()",
-  "error Reentrancy()",
-  "error NotOwner()",
-];
-
-const errorIface = new ethers.Interface(VETEX_ERRORS);
-
-function decodeCustomError(e) {
-  const data =
-    e?.data ||
-    e?.info?.error?.data ||
-    e?.error?.data ||
-    e?.info?.payload?.params?.[0]?.data ||
-    null;
-
-  if (!data || typeof data !== "string") return null;
-
-  try {
-    const parsed = errorIface.parseError(data);
-    return parsed?.name ? `${parsed.name}()` : null;
-  } catch {
-    return null;
-  }
-}
-
-// ----------------------------
-// 스타일 주입
-// ----------------------------
-function injectTradeStyleOnce() {
-  if (document.getElementById("__tradeStyle")) return;
-  const st = document.createElement("style");
-  st.id = "__tradeStyle";
-  st.textContent = `
-    .btn, button.btn{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      gap:8px;
-      line-height:1;
-      height:44px;
-      padding: 0 16px;
-      white-space:nowrap;
-      border-radius: 14px;
-    }
-    .trade-inline{
-      display:flex;
-      gap:12px;
-      align-items:center;
-      width:100%;
-      max-width:100%;
-    }
-    .trade-inline .input{ flex:1 1 auto; min-width:0; }
-    .trade-inline .btn{ flex:0 0 auto; min-width:120px; }
-
-    .trade-statusbar{
-      border: 1px solid rgba(255,255,255,0.12);
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
-      border-radius: 16px;
-      padding: 12px 14px;
-      margin: 12px 0 14px 0;
-    }
-    .trade-statusbar .row{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      flex-wrap:wrap;
-    }
-    .trade-chip{
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
-      height:28px;
-      padding: 0 10px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,0.16);
-      background: rgba(0,0,0,0.18);
-      font-size:12px;
-      color: rgba(255,255,255,0.82);
-    }
-    .trade-chip.ok{ border-color: rgba(34,197,94,0.40); }
-    .trade-chip.bad{ border-color: rgba(255,77,109,0.40); }
-    .trade-next{
-      margin-top:10px;
-      font-size:13px;
-      color: rgba(255,255,255,0.78);
-      line-height:1.5;
-      white-space:pre-line;
-    }
-    .trade-stepline{
-      margin-top:10px;
-      font-size:13px;
-      color: rgba(255,255,255,0.78);
-      line-height:1.55;
-      white-space:pre-line;
-    }
-  `;
-  document.head.appendChild(st);
-}
-
-// ----------------------------
-// UI 유틸
-// ----------------------------
-function showNote(msg, type = "", alsoAlert = false) {
+function setNote(msg, isErr = false) {
   const el = $("note");
-  if (el) {
-    el.style.display = msg ? "block" : "none";
-    el.className = "note" + (type ? " " + type : "");
-    el.textContent = msg || "";
-  }
-  if (alsoAlert && msg) alert(msg);
-}
-
-function setText(id, v) {
-  const el = $(id);
   if (!el) return;
-  el.textContent = v;
+  el.style.display = msg ? "block" : "none";
+  el.innerHTML = msg || "";
+  el.style.borderLeft = isErr ? "3px solid var(--danger)" : "3px solid var(--primary)";
+  el.style.color = isErr ? "var(--danger)" : "";
 }
-
-function setHTML(id, v) {
-  const el = $(id);
-  if (!el) return;
-  el.innerHTML = v;
-}
-
-function shortAddr(a) {
-  if (!a) return "-";
-  return a.slice(0, 6) + "..." + a.slice(-4);
-}
-
+function fmtNum(n) { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString() : "-"; }
+function shortAddr(a) { return a ? a.slice(0,6) + "…" + a.slice(-4) : "-"; }
 function fiatLabel(v) {
-  return Number(v) === 0 ? "KRW" : "VND";
+  if (v === 0 || v === "0" || v === "KRW") return "KRW";
+  if (v === 1 || v === "1" || v === "VND") return "VND";
+  return String(v ?? "-");
+}
+function statusLabel(n) {
+  return ["OPEN","TAKEN","PAID","RELEASED","CANCELED","DISPUTED","RESOLVED"][Number(n)] ?? String(n);
+}
+function activeAccount() { return window.jumpWallet?.address || account; }
+
+// ── Jump helper ───────────────────────────────────────────────────────────────
+async function jumpSendTx(to, abiFragments, fnName, args) {
+  const idToken  = await window.jumpWallet.getIdToken();
+  const callArgs = (args || []).map(a => typeof a === "bigint" ? a.toString() : a);
+  const abi      = Array.isArray(abiFragments) ? abiFragments : [abiFragments];
+  const result   = await window.jumpSignTx(idToken, {
+    type:   "contract",
+    to,
+    abi,
+    method: fnName,
+    args:   callArgs,
+  });
+  const txHash  = result?.data?.txHash || result?.txHash;
+  if (!txHash) throw new Error("Jump: txHash 없음 — 응답: " + JSON.stringify(result));
+  const rpc     = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+  const receipt = await rpc.waitForTransaction(txHash, 1, 90000);
+  if (receipt?.status === 0) throw new Error("트랜잭션 실패 (status=0)");
+  return receipt;
 }
 
-function statusLabel(v) {
-  const n = Number(v);
-  return ["OPEN", "TAKEN", "PAID", "RELEASED", "CANCELED", "DISPUTED", "RESOLVED"][n] ?? String(n);
-}
-
-function tokenSymbolByAddr(addr) {
-  const a = (addr || "").toLowerCase();
-  if (HEX_ADDR && a === String(HEX_ADDR).toLowerCase()) return "HEX";
-  if (USDT_ADDR && a === String(USDT_ADDR).toLowerCase()) return "USDT";
-  if (VET_ADDR && a === String(VET_ADDR).toLowerCase()) return "VET";
-  return addr || "-";
-}
-
-function setBtnState(id, enabled, reason = "") {
-  const el = $(id);
-  if (!el) return;
-  el.disabled = !enabled;
-  el.style.opacity = enabled ? "1" : "0.45";
-  el.style.pointerEvents = enabled ? "auto" : "none";
-  el.title = !enabled && reason ? reason : "";
-}
-
-function getStepInfoEl() {
-  return $("stepInfo") || $("tradeSteps") || $("progressInfo");
-}
-
-function renderStatusBar({ seller, buyer, status }, me) {
-  const host = getStepInfoEl();
-  if (!host) return;
-
-  let bar = document.getElementById("tradeStatusBar");
-  if (!bar) {
-    bar = document.createElement("div");
-    bar.id = "tradeStatusBar";
-    bar.className = "trade-statusbar";
-    host.parentNode?.insertBefore(bar, host);
-  }
-
-  const st = Number(status ?? 0);
-  const sellerL = (seller || "").toLowerCase();
-  const buyerL = (buyer || "").toLowerCase();
-  const meL = (me || "").toLowerCase();
-
-  let role = "미연결";
-  if (meL) {
-    if (meL === sellerL) role = "판매자";
-    else if (buyer && buyer !== ethers.ZeroAddress && meL === buyerL) role = "구매자";
-    else role = "당사자 아님";
-  }
-
-  let next = "";
-  if (!meL) next = "지갑을 연결하면 내 역할에 맞는 버튼만 활성화됩니다.";
-  else if (st === 0) next = "구매자: 거래신청(acceptTrade) 완료 전 입금하지 마세요.\n중복입금 방지 목적입니다.";
-  else if (st === 1) next = "구매자: 입금 후 입금완료(markPaid)를 누르세요.";
-  else if (st === 2) next = "판매자: 입금 확인 후 토큰 이체(release)를 누르세요.";
-  else if (st === 3) next = "완료: 토큰 이체가 끝났습니다.";
-  else if (st === 4) next = "취소: 거래가 취소되었습니다.";
-  else if (st === 5) next = "분쟁: 중재자 해결 필요.";
-  else next = "현재 상태에서 추가 진행이 제한됩니다.";
-
-  const chipClass = st === 3 ? "ok" : (st === 4 || st === 5) ? "bad" : "";
-
-  bar.innerHTML = `
-    <div class="row">
-      <span class="trade-chip ${chipClass}">상태: ${statusLabel(st)}</span>
-      <span class="trade-chip">내 역할: ${role}</span>
-      <span class="trade-chip">판매자: ${shortAddr(seller)}</span>
-      <span class="trade-chip">구매자: ${buyer && buyer !== ethers.ZeroAddress ? shortAddr(buyer) : "-"}</span>
-    </div>
-    <div class="trade-next">${next}</div>
-  `;
-}
-
-function renderStepInfoText({ status }, me) {
-  const el = getStepInfoEl();
-  if (!el) return;
-
-  const st = Number(status ?? 0);
-
-  let msg = "";
-  if (st === 0) {
-    msg =
-      "1) 구매자: 거래신청(acceptTrade)\n" +
-      "2) 구매자: 입금 후 입금완료(markPaid)\n" +
-      "3) 판매자: 입금 확인 후 토큰 이체(release)\n" +
-      "4) 판매자: 필요 시 판매취소(cancelBySeller)";
-  } else if (st === 1) {
-    msg = "현재: TAKEN\n다음: 구매자 markPaid";
-  } else if (st === 2) {
-    msg = "현재: PAID\n다음: 판매자 release";
-  } else {
-    msg = `현재: ${statusLabel(st)}`;
-  }
-
-  if (!me) msg += "\n(지갑 미연결)";
-
-  el.classList.add("trade-stepline");
-  el.textContent = msg;
-}
-
-// ----------------------------
-// 컨트랙트
-// ----------------------------
-function getReadProvider() {
-  return provider ?? new ethers.JsonRpcProvider(RPC_URL);
-}
-
-function getVetEx(readOnly = true) {
-  const p = getReadProvider();
-  if (!VET_EX) throw new Error("CONFIG.CONTRACT.vetEX 없음");
-  if (!ABI?.length) throw new Error("ABI 없음");
-  if (!readOnly) {
-    if (!signer) throw new Error("signer 없음 (지갑 연결 필요)");
-    return new ethers.Contract(VET_EX, ABI, signer);
-  }
-  return new ethers.Contract(VET_EX, ABI, p);
-}
-
-async function readTokenBalance(tokenAddr, ownerAddr, fallbackDecimals = 18) {
-  const t = new ethers.Contract(tokenAddr, ERC20_ABI, getReadProvider());
-  let d = fallbackDecimals;
-  try {
-    d = Number(await t.decimals());
-  } catch {}
-  const b = await t.balanceOf(ownerAddr);
-  return { b, d };
-}
-
-async function refreshHeaderBalances() {
-  if (!account) return;
-  if ($("walletAddr")) setText("walletAddr", shortAddr(account));
-
-  try {
-    const hexAddr = CONFIG?.TOKENS?.HEX?.address;
-    const usdtAddr = CONFIG?.TOKENS?.USDT?.address;
-    const vetAddr = CONFIG?.TOKENS?.VET?.address || VET_ADDR;
-
-    if ($("myHexBal")) {
-      if (hexAddr) {
-        const { b, d } = await readTokenBalance(hexAddr, account, CONFIG?.TOKENS?.HEX?.decimals ?? 18);
-        setText("myHexBal", ethers.formatUnits(b, d));
-      } else setText("myHexBal", "-");
-    }
-
-    if ($("myUsdtBal")) {
-      if (usdtAddr) {
-        const { b, d } = await readTokenBalance(usdtAddr, account, CONFIG?.TOKENS?.USDT?.decimals ?? 18);
-        setText("myUsdtBal", ethers.formatUnits(b, d));
-      } else setText("myUsdtBal", "-");
-    }
-
-    if ($("myVetBal")) {
-      if (vetAddr) {
-        const { b, d } = await readTokenBalance(vetAddr, account, CONFIG?.TOKENS?.VET?.decimals ?? 0);
-        // VET는 0 decimals 가정. 그래도 안전하게 formatUnits 사용
-        setText("myVetBal", ethers.formatUnits(b, d));
-      } else setText("myVetBal", "-");
-    }
-  } catch (e) {
-    console.error(e);
-    showNote("잔고 조회 실패 (RPC/토큰주소/네트워크 확인)", "bad");
-  }
-}
-
+// ── Wallet connect ────────────────────────────────────────────────────────────
 async function connectWallet() {
-  if (!window.ethereum) {
-    showNote("지갑이 없습니다. MetaMask/Rabby 설치 필요", "bad", true);
-    return null;
+  if (window.jumpWallet?.address) {
+    account = window.jumpWallet.address;
+    $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
+    $("btnConnect").textContent = "연결됨";
+    $("btnConnect").disabled    = true;
+    return account;
   }
+  if (!window.ethereum) throw new Error("MetaMask 또는 구글 로그인이 필요합니다.");
+  if (window.__hdrWallet?.connect) await window.__hdrWallet.connect();
   provider = new ethers.BrowserProvider(window.ethereum);
   await provider.send("eth_requestAccounts", []);
-  signer = await provider.getSigner();
+  signer  = await provider.getSigner();
   account = await signer.getAddress();
-  await refreshHeaderBalances();
-  showNote("지갑 연결됨: " + shortAddr(account), "ok");
+  $("walletAddr").textContent = "🦊 " + account.slice(0,6) + "…" + account.slice(-4);
+  $("btnConnect").textContent = "연결됨";
+  $("btnConnect").disabled    = true;
   return account;
 }
 
-// ----------------------------
-// tradeId 파싱
-// ----------------------------
-function getTradeIdFromQuery() {
-  const u = new URL(location.href);
-  return u.searchParams.get("id") || null;
-}
-
-// ----------------------------
-// revert 디코딩
-// ----------------------------
-function decodeRevertIfPossible(e) {
-  const custom = decodeCustomError(e);
-  if (custom) return custom;
-
-  try {
-    const iface = new ethers.Interface(ABI);
-    const data =
-      e?.data ||
-      e?.error?.data ||
-      e?.info?.error?.data ||
-      e?.info?.payload?.params?.[0]?.data ||
-      null;
-
-    if (!data || typeof data !== "string") return null;
-    const parsed = iface.parseError(data);
-    if (!parsed) return null;
-
-    const args = parsed.args ? Array.from(parsed.args).map((x) => String(x)) : [];
-    return `${parsed.name}${args.length ? " (" + args.join(", ") + ")" : ""}`;
-  } catch {
-    return null;
-  }
-}
-
-// ----------------------------
-// 버튼 게이팅
-// ----------------------------
-function gateButtons({ seller, buyer, status }) {
-  const me = (account || "").toLowerCase();
-  const sellerL = (seller || "").toLowerCase();
-  const buyerL = (buyer || "").toLowerCase();
-  const st = Number(status ?? 0);
-
-  const buyerIsZero = !buyer || buyer === ethers.ZeroAddress;
-  const isSeller = me && sellerL && me === sellerL;
-  const isBuyer = me && buyerL && me === buyerL;
-
-  if ($("btnAccept")) $("btnAccept").textContent = "거래신청";
-  if ($("btnPaid")) $("btnPaid").textContent = "입금 완료";
-  if ($("btnRelease")) $("btnRelease").textContent = "토큰 이체";
-  if ($("btnCancel")) $("btnCancel").textContent = "판매 취소";
-
-  const needConnect = "지갑 연결이 필요합니다.";
-  const needBuyer = "구매자 지갑으로만 가능합니다.";
-  const needSeller = "판매자 지갑으로만 가능합니다.";
-  const badStatus = (need) => `현재 상태(${statusLabel(st)})에서는 ${need}할 수 없습니다.`;
-
-  const canAccept = !!account && st === 0 && (buyerIsZero || isBuyer);
-  let acceptReason = "";
-  if (!account) acceptReason = needConnect;
-  else if (st !== 0) acceptReason = badStatus("거래신청");
-  else if (!buyerIsZero && !isBuyer) acceptReason = "지정된 구매자만 거래신청 가능합니다.";
-
-  const canPaid = !!account && st === 1 && isBuyer;
-  let paidReason = "";
-  if (!account) paidReason = needConnect;
-  else if (st !== 1) paidReason = badStatus("입금완료 표시");
-  else if (!isBuyer) paidReason = needBuyer;
-
-  const canRelease = !!account && st === 2 && isSeller;
-  let releaseReason = "";
-  if (!account) releaseReason = needConnect;
-  else if (st !== 2) releaseReason = badStatus("토큰 이체");
-  else if (!isSeller) releaseReason = needSeller;
-
-  const canCancel = !!account && (st === 0 || st === 1) && isSeller;
-  let cancelReason = "";
-  if (!account) cancelReason = needConnect;
-  else if (!(st === 0 || st === 1)) cancelReason = badStatus("판매취소");
-  else if (!isSeller) cancelReason = needSeller;
-
-  setBtnState("btnAccept", canAccept, acceptReason);
-  setBtnState("btnPaid", canPaid, paidReason);
-  setBtnState("btnRelease", canRelease, releaseReason);
-  setBtnState("btnCancel", canCancel, cancelReason);
-}
-
-// ----------------------------
-// 핵심: token transfer를 provider.call로 시뮬레이션
-// ----------------------------
-async function simulateEscrowTransfer(tokenAddr, to, amount) {
-  const p = getReadProvider();
-  const erc20Iface = new ethers.Interface(ERC20_ABI);
-
-  const data = erc20Iface.encodeFunctionData("transfer", [to, amount]);
-
-  try {
-    const ret = await p.call({
-      to: tokenAddr,
-      from: VET_EX,
-      data,
-    });
-
-    if (!ret || ret === "0x") {
-      return { ok: true, kind: "nostd", raw: ret };
-    }
-
-    let ok = true;
-    try {
-      const [b] = erc20Iface.decodeFunctionResult("transfer", ret);
-      ok = !!b;
-    } catch {
-      ok = true;
-      return { ok, kind: "nostd", raw: ret };
-    }
-    return { ok, kind: "bool", raw: ret };
-  } catch (e) {
-    return { ok: false, kind: "revert", err: e };
-  }
-}
-
-async function readEscrowTokenBalance(tokenAddr, decFallback = 18) {
-  const t = new ethers.Contract(tokenAddr, ERC20_ABI, getReadProvider());
-  let d = decFallback;
-  try {
-    d = Number(await t.decimals());
-  } catch {}
-  const bal = await t.balanceOf(VET_EX);
-  return { bal, d };
-}
-
-// ----------------------------
-// Firestore + Onchain 로드
-// ----------------------------
-async function loadTrade(tradeId) {
-  setText("subTitle", `tradeId = ${tradeId}`);
-
-  if (!VET_EX) {
-    showNote("CONFIG.CONTRACT.vetEX 없음 (config.js 확인)", "bad", true);
-    return null;
-  }
-  if (!ABI?.length) {
-    showNote("ABI 없음 (contract.js 확인)", "bad", true);
-    return null;
-  }
-  if (!RPC_URL) {
-    showNote("CONFIG.RPC_URL 없음", "bad", true);
-    return null;
-  }
-
-  // Firestore meta (✅ contracts별 컬렉션)
-  let meta = null;
-  if (db) {
-    try {
-      const col = tradesCollectionName();
-      const ref = doc(db, col, String(tradeId));
-      const snap = await getDoc(ref);
-      if (snap.exists()) meta = snap.data();
-    } catch (e) {
-      console.warn("firestore meta load fail:", e);
-    }
-  }
-
-  // Onchain
-  const c = getVetEx(true);
-  let on;
-  try {
-    on = await c.getTrade(tradeId);
-  } catch (e) {
-    console.error(e);
-    const decoded = decodeRevertIfPossible(e);
-    showNote("온체인 getTrade 실패: " + (decoded || e?.shortMessage || e?.message || "unknown"), "bad", true);
-    return null;
-  }
-
-  const seller = on.seller ?? on[0];
-  const buyer = on.buyer ?? on[1];
-  const token = on.token ?? on[2];
-  const amount = on.amount ?? on[3];
-  const fiatAmount = on.fiatAmount ?? on[4];
-  const paymentRef = on.paymentRef ?? on[5];
-  const fiat = on.fiat ?? on[8];
-  const status = on.status ?? on[9];
-
-  const sym = tokenSymbolByAddr(token);
-
-  let dec = 18;
-  try {
-    const tt = new ethers.Contract(token, ERC20_ABI, getReadProvider());
-    dec = Number(await tt.decimals());
-  } catch {
-    dec =
-      sym === "HEX" ? (CONFIG?.TOKENS?.HEX?.decimals ?? 18)
-      : sym === "USDT" ? (CONFIG?.TOKENS?.USDT?.decimals ?? 18)
-      : sym === "VET" ? (CONFIG?.TOKENS?.VET?.decimals ?? 0)
-      : 18;
-  }
-
-  setText("vToken", sym);
-  setText("vAmount", ethers.formatUnits(amount, dec));
-  setText("vFiat", fiatLabel(fiat));
-  setText("vFiatAmount", Number(fiatAmount ?? 0).toLocaleString());
-  setText("vStatus", statusLabel(status ?? 0));
-  setText("vPaymentRef", paymentRef && paymentRef !== ethers.ZeroHash ? String(paymentRef) : "-");
-  setText("vSeller", seller ? String(seller) : "-");
-  setText("vBuyer", buyer && buyer !== ethers.ZeroAddress ? String(buyer) : "-");
-
-  // seller SNS: meta 우선
-  // seller SNS: meta 우선
-  let sellerSns = meta?.sellerSns || "-";
-
-  // 1) Firestore users/{seller} 에서 kakao/telegram 읽기 (프로필에서 저장한 값)
-  try {
-    if ((sellerSns === "-" || !sellerSns) && db && seller) {
-      const uref = doc(db, "users", String(seller).toLowerCase());
-      const usnap = await getDoc(uref);
-      if (usnap.exists()) {
-        const ud = usnap.data() || {};
-        const kk = (ud.kakaoId || "").trim();
-        const tg = (ud.telegramId || "").trim();
-        const join = [
-          kk ? `kakao: ${kk}` : "",
-          tg ? `tg: ${tg}` : ""
-        ].filter(Boolean).join(" / ");
-        if (join) sellerSns = join;
-      }
-    }
-  } catch (e) {
-    console.warn("seller sns(users) load fail:", e);
-  }
-
-  // 2) (옵션) 온체인 getSellerContact가 있으면 그 값으로 덮어쓰기
-  try {
-    if (typeof c.getSellerContact === "function") {
-      const [kakaoId, telegramId, registered] = await c.getSellerContact(seller);
-      if (registered) {
-        const kk = kakaoId ? `kakao: ${kakaoId}` : "";
-        const tg = telegramId ? `tg: ${telegramId}` : "";
-        const join = [kk, tg].filter(Boolean).join(" / ");
-        sellerSns = join || sellerSns;
-      }
-    }
-  } catch {}
-
-  setText("vSellerSns", sellerSns);
-
-
-  if ($("vVetBadge")) {
-    setHTML("vVetBadge", sym === "HEX" ? `<span class="badge">매수자에게 VET 보상</span>` : `-`);
-  }
-
-
-  renderStatusBar({ seller, buyer, status }, account);
-  renderStepInfoText({ status }, account);
-  gateButtons({ seller, buyer, status });
-
-  return {
-    meta,
-    on: { seller, buyer, token, amount, fiatAmount, paymentRef, fiat, status, dec, sym },
+// ── Progress bar ──────────────────────────────────────────────────────────────
+// chainStatus: 0=OPEN,1=TAKEN,2=PAID,3=RELEASED,4=CANCELED
+// For BUY ad before on-chain: chainStatus = -1 (just OPEN in Firestore)
+function updateProgress(chainStatus) {
+  const st = Number(chainStatus ?? -1);
+  // step1=에스크로, step2=입금대기, step3=입금확인, step4=완료
+  const states = {
+    "-1": [false,false,false,false], // BUY ad not yet on-chain
+    "0":  [true, false,false,false], // OPEN - escrow done
+    "1":  [true, true, false,false], // TAKEN - waiting payment
+    "2":  [true, true, true, false], // PAID - waiting release
+    "3":  [true, true, true, true],  // RELEASED/COMPLETED
+    "4":  [false,false,false,false], // CANCELED
   };
-}
-// ----------------------------
-// 액션
-// ----------------------------
-async function doAccept(tradeId) {
-  showNote("");
-  if (!account) await connectWallet();
+  const active = {
+    "-1": 1, "0": 2, "1": 2, "2": 3, "3": 4, "4": 0,
+  };
+  const done = states[String(st)] ?? states["0"];
+  const activeStep = active[String(st)] ?? 0;
 
-  const c = getVetEx(false);
-  try {
-    showNote("거래신청(acceptTrade) 전송...", "");
-    const tx = await c.acceptTrade(tradeId);
-    await tx.wait();
-    showNote("거래신청 완료", "ok");
-    await loadTrade(tradeId);
-  } catch (e) {
-    console.error(e);
-    const decoded = decodeRevertIfPossible(e);
-    showNote(decoded || e?.shortMessage || e?.message || String(e), "bad", true);
+  for (let i = 1; i <= 4; i++) {
+    const el = $("step" + i);
+    if (!el) continue;
+    el.classList.toggle("done",   done[i-1]);
+    el.classList.toggle("active", !done[i-1] && activeStep === i);
   }
 }
 
-function toRefHash(str) {
-  if (!str) return ethers.ZeroHash;
-  return ethers.keccak256(ethers.toUtf8Bytes(str));
-}
+// ── Timer ─────────────────────────────────────────────────────────────────────
+let timerInterval = null;
 
-async function doPaid(tradeId) {
-  showNote("");
-  if (!account) await connectWallet();
+function startTimer(escrowedAtMs, timeoutMin, onExpire) {
+  const timerEl   = $("tradeTimer");
+  const displayEl = $("timerDisplay");
+  const noteEl    = $("timerNote");
+  if (!timerEl || !displayEl) return;
 
-  const c = getVetEx(false);
-  try {
-    const raw = ($("inpRef")?.value || "").trim();
-    const ref = toRefHash(raw);
+  if (timerInterval) clearInterval(timerInterval);
 
-    showNote("입금완료 표시(markPaid) 전송...", "");
-    const tx = await c.markPaid(tradeId, ref);
-    await tx.wait();
-    showNote("입금완료 표시 완료", "ok");
-    await loadTrade(tradeId);
-  } catch (e) {
-    console.error(e);
-    const decoded = decodeRevertIfPossible(e);
-    showNote(decoded || e?.shortMessage || e?.message || String(e), "bad", true);
-  }
-}
+  const deadlineMs = escrowedAtMs + timeoutMin * 60 * 1000;
+  let expired = false;
 
-async function doRelease(tradeId) {
-  showNote("");
-  if (!account) await connectWallet();
-
-  const cRead = getVetEx(true);
-  const c = getVetEx(false);
-
-  try {
-    showNote("토큰 이체(release) 사전 점검...", "");
-
-    const on = await cRead.getTrade(tradeId);
-    const seller = on.seller ?? on[0];
-    const buyer = on.buyer ?? on[1];
-    const token = on.token ?? on[2];
-    const amount = on.amount ?? on[3];
-    const status = Number(on.status ?? on[9]);
-
-    if (String(seller).toLowerCase() !== String(account).toLowerCase()) {
-      throw new Error(`판매자만 토큰 이체가 가능합니다.\n현재=${shortAddr(account)} / 판매자=${shortAddr(seller)}`);
-    }
-    if (status !== 2) {
-      throw new Error(`토큰 이체 불가 상태입니다.\n현재 상태=${statusLabel(status)}`);
-    }
-    if (!buyer || buyer === ethers.ZeroAddress) {
-      throw new Error("구매자 주소가 비어있습니다.\nacceptTrade 처리 여부를 확인하세요.");
-    }
-
-    const { bal, d } = await readEscrowTokenBalance(token, 18);
-    if (bal < amount) {
-      const need = ethers.formatUnits(amount, d);
-      const cur = ethers.formatUnits(bal, d);
-      throw new Error(`에스크로 잔고 부족\n필요=${need}\n현재=${cur}`);
-    }
-
-    showNote("토큰 전송 시뮬레이션(eth_call) 중...", "");
-    const sim = await simulateEscrowTransfer(token, buyer, amount);
-
-    if (!sim.ok) {
-      const decoded = decodeRevertIfPossible(sim.err) || sim.err?.shortMessage || sim.err?.message || "token revert";
-      throw new Error(
-        "토큰 전송이 컨트랙트 레벨에서 막혀있습니다.\n" +
-        "즉, vetEX가 buyer에게 토큰을 보낼 수 없는 상태입니다.\n\n" +
-        "token revert: " + decoded + "\n\n" +
-        "원인 후보:\n" +
-        "- 토큰 전송이 비활성화(런치 전)\n" +
-        "- vetEX 주소가 화이트리스트에 없음\n" +
-        "- 특정 컨트랙트/주소 전송 제한(블랙리스트/제한)\n"
-      );
-    }
-
-    showNote("토큰 이체(release) 전송...", "");
-
-    const gas = await c.release.estimateGas(tradeId).catch(() => null);
-    const overrides = gas ? { gasLimit: (gas * 130n) / 100n } : { gasLimit: 900000n };
-
-    const tx = await c.release(tradeId, overrides);
-    await tx.wait();
-
-    showNote("토큰 이체 완료", "ok", true);
-    await loadTrade(tradeId);
-  } catch (e) {
-    console.error(e);
-    const decoded = decodeRevertIfPossible(e);
-    showNote(decoded || e?.shortMessage || e?.message || String(e), "bad", true);
-  }
-}
-
-async function doCancel(tradeId) {
-  showNote("");
-  if (!account) await connectWallet();
-
-  const c = getVetEx(false);
-  try {
-    showNote("판매 취소(cancelBySeller) 전송...", "");
-    const tx = await c.cancelBySeller(tradeId);
-    await tx.wait();
-    showNote("판매 취소 완료", "ok");
-    await loadTrade(tradeId);
-  } catch (e) {
-    console.error(e);
-    const decoded = decodeRevertIfPossible(e);
-    showNote(decoded || e?.shortMessage || e?.message || String(e), "bad", true);
-  }
-}
-
-// ----------------------------
-// boot
-// ----------------------------
-(async function boot() {
-  injectTradeStyleOnce();
-
-  try {
-    const tradeId = getTradeIdFromQuery();
-    if (!tradeId) {
-      showNote("trade.html?id=숫자 형식으로 접근하세요.", "bad", true);
+  function tick() {
+    const now  = Date.now();
+    const left = deadlineMs - now;
+    if (left <= 0) {
+      displayEl.textContent = "00:00";
+      timerEl.classList.add("expired");
+      if (noteEl) noteEl.textContent = "타임아웃 — 판매자·구매자 모두 취소 가능";
+      clearInterval(timerInterval);
+      if (!expired) { expired = true; if (onExpire) onExpire(); }
       return;
     }
+    const m = Math.floor(left / 60000);
+    const s = Math.floor((left % 60000) / 1000);
+    displayEl.textContent = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+    timerEl.classList.remove("expired");
+    if (noteEl) noteEl.textContent = "입금 후 '입금 완료' 버튼을 눌러주세요";
+  }
+  timerEl.classList.add("visible");
+  tick();
+  timerInterval = setInterval(tick, 1000);
+}
 
-    await loadTrade(tradeId);
+function stopTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  const timerEl = $("tradeTimer");
+  if (timerEl) timerEl.classList.remove("visible");
+}
 
-    $("btnConnect")?.addEventListener("click", async () => {
-      await connectWallet();
-      await loadTrade(tradeId);
+// ── Render trade info ─────────────────────────────────────────────────────────
+function renderInfo(ad, chainSt, tradeId) {
+  const fiat       = fiatLabel(ad.fiat);
+  const amount     = fmtNum(ad.amount);
+  const unitPrice  = fmtNum(ad.unitPrice);
+  const total      = fmtNum(ad.fiatAmount || (ad.amount * ad.unitPrice));
+  const timeout    = (ad.timeoutMin || CONFIG.PAYMENT_TIMEOUT_MIN || 30) + "분";
+
+  const statusN  = Number(chainSt ?? (ad.type === "BUY" ? -1 : 0));
+  const statusStr = statusN < 0 ? "OPEN" : statusLabel(statusN);
+  const sbClass   = { OPEN:"sb-open", TAKEN:"sb-taken", PAID:"sb-paid",
+                      RELEASED:"sb-released", CANCELED:"sb-canceled", DISPUTED:"sb-disputed" }[statusStr] ?? "sb-open";
+
+  const vStatus = $("vStatus");
+  if (vStatus) vStatus.innerHTML = `<span class="status-badge ${sbClass}">${statusStr}</span>`;
+
+  if ($("vTradeId"))   $("vTradeId").textContent   = tradeId ?? "-";
+  if ($("vAmount"))    $("vAmount").textContent     = amount + " HEX";
+  if ($("vUnitPrice")) $("vUnitPrice").textContent  = unitPrice + " " + fiat;
+  if ($("vTotal"))     $("vTotal").textContent      = total + " " + fiat;
+  if ($("vFiat"))      $("vFiat").textContent       = fiat;
+  if ($("vTimeout"))   $("vTimeout").textContent    = timeout;
+  if ($("vSeller"))    $("vSeller").textContent     = ad.seller ? shortAddr(ad.seller) : "-";
+  if ($("vBuyer"))     $("vBuyer").textContent      = ad.buyer  ? shortAddr(ad.buyer)  : "-";
+
+  // 구매 수량 / 입금 총액 (거래 신청 후)
+  if (ad.buyAmount) {
+    const rowAmt  = $("rowBuyAmount");
+    const rowFiat = $("rowBuyFiat");
+    if (rowAmt)  { rowAmt.style.display  = "";  $("vBuyAmount").textContent = fmtNum(ad.buyAmount) + " HEX"; }
+    if (rowFiat) { rowFiat.style.display = "";  $("vBuyFiat").textContent   = fmtNum(ad.buyFiat) + " " + fiat; }
+  }
+
+  const termsEl = $("vTerms");
+  if (termsEl && ad.terms) {
+    termsEl.style.display = "block";
+    termsEl.textContent = "📋 " + ad.terms;
+  }
+
+  // Ad type badge
+  const badgeEl = $("adTypeBadge");
+  if (badgeEl) {
+    if (ad.type === "BUY") {
+      badgeEl.innerHTML = `<span style="color:#22c55e;">📥 구매 광고</span> · 구매자가 HEX를 사고 싶어합니다`;
+    } else {
+      badgeEl.innerHTML = `<span style="color:#f97316;">📤 판매 광고</span> · 판매자가 HEX를 팝니다`;
+    }
+  }
+
+  // Role badge
+  renderRoleBadge(ad, activeAccount());
+}
+
+function renderRoleBadge(ad, me) {
+  const el = $("myRoleBadge");
+  if (!el) return;
+  const meL = (me || "").toLowerCase();
+  const sellerL = (ad.seller || "").toLowerCase();
+  const buyerL  = (ad.buyer  || "").toLowerCase();
+  let role = "viewer", label = "관찰자";
+  if (meL && meL === sellerL) { role = "seller"; label = "판매자"; }
+  else if (meL && buyerL && meL === buyerL) { role = "buyer";  label = "구매자"; }
+  else if (meL) { role = "viewer"; label = "참여 가능"; }
+  el.className = "role-badge " + role;
+  el.textContent = label;
+}
+
+// ── Render payment methods ────────────────────────────────────────────────────
+const TYPE_LABEL = {
+  BANK_KR: "🏦 한국 계좌이체",
+  BANK_VN: "🏦 베트남 계좌이체",
+  CASH:    "💵 현금",
+  QR:      "📱 QR",
+};
+
+function renderPaymentMethods(ad) {
+  const list = $("pmList");
+  if (!list) return;
+  const pms = ad.paymentMethods || [];
+  if (!pms.length) {
+    list.innerHTML = `<div class="muted" style="font-size:13px;">결제수단 정보 없음</div>`;
+    return;
+  }
+  list.innerHTML = pms.map(pm => {
+    const type = TYPE_LABEL[pm.type] ?? pm.type;
+    const bank = pm.bankName ? `<div><span style="color:var(--muted);">은행:</span> <strong>${pm.bankName}</strong></div>` : "";
+    const name = pm.accountName ? `<div><span style="color:var(--muted);">예금주:</span> <strong>${pm.accountName}</strong></div>` : "";
+    const num  = pm.accountNumber ? `<div><span style="color:var(--muted);">계좌:</span> <strong class="mono">${pm.accountNumber}</strong></div>` : "";
+    const note = pm.note ? `<div style="color:var(--muted); font-size:12px; margin-top:4px;">${pm.note}</div>` : "";
+    return `<div class="pm-card"><div class="pm-type">${type}</div><div class="pm-detail">${bank}${name}${num}${note}</div></div>`;
+  }).join("");
+}
+
+// ── Trade stats helper ────────────────────────────────────────────────────────
+async function updateTradeStats(addr, isSuccess) {
+  if (!addr) return;
+  try {
+    const ref = doc(db, "users", addr.toLowerCase());
+    const updates = { totalTrades: increment(1) };
+    if (isSuccess) updates.completedTrades = increment(1);
+    await updateDoc(ref, updates);
+  } catch {}
+}
+
+// ── Render seller SNS + stats ──────────────────────────────────────────────────
+async function loadSellerSns(sellerAddr) {
+  const el = $("vSellerSns");
+  if (!el || !sellerAddr) return;
+  try {
+    const snap = await getDoc(doc(db, "users", sellerAddr.toLowerCase()));
+    if (snap.exists()) {
+      const d     = snap.data() || {};
+      const kk    = d.kakaoId    ? `<div>💬 카카오: <strong>${d.kakaoId}</strong></div>`    : "";
+      const tg    = d.telegramId ? `<div>✈ 텔레그램: <strong>${d.telegramId}</strong></div>` : "";
+      const total = d.totalTrades    ?? 0;
+      const done  = d.completedTrades ?? 0;
+      const rate  = total > 0 ? Math.round((done / total) * 100) : null;
+      const stats = `<div style="margin-bottom:6px; font-size:12px; color:#94a3b8;">
+        📊 거래건수: <strong style="color:#e2e8f0;">${total}건</strong>
+        &nbsp;·&nbsp; 성공률: <strong style="color:#22c55e;">${rate !== null ? rate + "%" : "-"}</strong>
+      </div>`;
+      el.innerHTML = stats + ((kk + tg) || "<span class='muted'>등록된 연락처 없음</span>");
+    }
+  } catch {}
+}
+
+// ── Timeout check ─────────────────────────────────────────────────────────────
+// 현재 배포 컨트랙트: timeoutSeconds 필드 없음 → Firestore adData.timeoutMin 기준
+function isTimedOut() {
+  if (!chainData) return false;
+  const takenAt = Number(chainData.takenAt ?? chainData[7] ?? 0);
+  if (!takenAt) return false;
+  const timeoutSec = (adData?.timeoutMin || CONFIG.PAYMENT_TIMEOUT_MIN || 30) * 60;
+  return Math.floor(Date.now() / 1000) >= takenAt + timeoutSec;
+}
+
+// ── Action buttons visibility ─────────────────────────────────────────────────
+function renderActions(ad, chainSt) {
+  const me       = (activeAccount() || "").toLowerCase();
+  const sellerL  = (ad.seller || "").toLowerCase();
+  const buyerL   = (ad.buyer  || "").toLowerCase();
+  const st       = Number(chainSt ?? -1);
+  const isSeller = me && me === sellerL;
+  const isBuyer  = me && buyerL && me === buyerL;
+  const timedOut = isTimedOut();
+
+  // Hide all first
+  ["btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute"]
+    .forEach(id => { const el = $(id); if (el) el.style.display = "none"; });
+
+  const guide = $("actionGuide");
+
+  // BUY ad — viewer (potential seller) can accept
+  if (ad.type === "BUY" && st < 0 && !isBuyer && me) {
+    show("btnSellerAccept");
+    setGuide("💡 이 구매 광고에 판매자로 응하려면 HEX를 에스크로에 잠급니다.", false);
+    return;
+  }
+
+  // SELL ad — OPEN: seller can cancel/reclaim
+  if ((ad.type !== "BUY") && st === 0 && isSeller) {
+    show("btnCancelOpen");
+    setGuide("📢 모집 중입니다. 광고를 취소하면 에스크로된 HEX가 반환됩니다.", false);
+    return;
+  }
+
+  // SELL ad — OPEN: viewer/buyer can accept
+  if ((ad.type !== "BUY") && st === 0 && !isSeller && me) {
+    show("acceptSection");
+    initAcceptForm(ad);
+    setGuide("💡 구매할 수량을 입력하고 거래를 신청하세요.", false);
+    return;
+  }
+
+  // TAKEN: buyer marks paid / timeout → both can cancel
+  if (st === 1) {
+    if (timedOut) {
+      // 타임아웃 경과 — 판매자·구매자 모두 취소 가능
+      if (isSeller) {
+        show("btnCancel");
+        setGuide("⏰ 타임아웃! 구매자가 입금하지 않았습니다. 거래를 취소할 수 있습니다.", true);
+      }
+      if (isBuyer) {
+        show("btnCancelByBuyer");
+        show("paidSection"); // 입금 완료 처리도 여전히 가능
+        setGuide("⏰ 타임아웃! 거래를 취소하거나, 입금 완료 처리를 할 수 있습니다.", true);
+      }
+    } else {
+      // 타임아웃 전 — 일반 대기
+      if (isBuyer) {
+        show("paidSection");
+        setGuide("✅ 판매자 계좌로 입금 후 아래 '입금 완료'를 눌러주세요.", false);
+      }
+      if (isSeller) {
+        setGuide("⏳ 구매자의 입금을 기다리고 있습니다. 타임아웃 시 취소 가능합니다.", false);
+      }
+    }
+    return;
+  }
+
+  // PAID: seller releases
+  if (st === 2) {
+    if (isSeller) {
+      show("btnRelease");
+      show("btnDispute");
+      setGuide("💰 입금 확인 후 '토큰 이체'를 눌러 HEX를 구매자에게 보내세요.", false);
+    }
+    if (isBuyer) {
+      setGuide("⏳ 판매자의 토큰 이체를 기다리고 있습니다.", false);
+    }
+    return;
+  }
+
+  if (st === 3) { setGuide("🎉 거래가 완료되었습니다.", false); return; }
+  if (st === 4) { setGuide("❌ 거래가 취소되었습니다.", true);  return; }
+  if (st === 5) { setGuide("⚠ 분쟁 접수 완료. 관리자에게 문의하세요.", true); return; }
+
+  if (!me) setGuide("지갑을 연결하면 내 역할에 맞는 버튼이 표시됩니다.", false);
+}
+
+function show(id) { const el = $(id); if (el) el.style.display = ""; }
+function setGuide(msg, isErr) {
+  const el = $("actionGuide");
+  if (!el) return;
+  el.style.display = msg ? "block" : "none";
+  el.textContent   = msg || "";
+  el.style.borderLeft = isErr ? "3px solid var(--danger)" : "3px solid var(--primary)";
+  el.style.color   = isErr ? "var(--danger)" : "";
+}
+
+// ── Accept form: 수량 입력 + 총액 계산 ────────────────────────────────────────
+function initAcceptForm(ad) {
+  const maxHex  = Number(ad.amount || 0);
+  const price   = Number(ad.unitPrice || 0);
+  const minFiat = Number(ad.minFiat || 0);
+  const maxFiat = Number(ad.maxFiat || ad.fiatAmount || maxHex * price);
+  const fiat    = fiatLabel(ad.fiat);
+
+  // 최소 HEX (minFiat 기준)
+  const minHex  = price > 0 ? Math.ceil(minFiat / price) : 0;
+
+  const hint = $("acceptLimitHint");
+  if (hint) hint.textContent = `${minHex.toLocaleString()} ~ ${maxHex.toLocaleString()} HEX 가능`;
+
+  const inp  = $("inpBuyAmount");
+  const tot  = $("acceptTotal");
+  const warn = $("acceptLimitWarn");
+  const btn  = $("btnAccept");
+
+  // 최대 수량 버튼
+  $("acceptMaxBtn")?.addEventListener("click", () => {
+    if (inp) { inp.value = maxHex; inp.dispatchEvent(new Event("input")); }
+  });
+
+  function recalc() {
+    const qty  = Number(inp?.value || 0);
+    const fiatAmt = Math.floor(qty * price);
+    if (!qty) {
+      if (tot)  tot.textContent  = "-";
+      if (warn) warn.style.display = "none";
+      if (btn)  btn.disabled = true;
+      return;
+    }
+    if (tot) tot.textContent = fiatAmt.toLocaleString() + " " + fiat;
+
+    // 유효성 검사
+    let errMsg = "";
+    if (qty > maxHex)      errMsg = `최대 ${maxHex.toLocaleString()} HEX까지 가능합니다.`;
+    else if (qty < minHex) errMsg = `최소 ${minHex.toLocaleString()} HEX 이상이어야 합니다.`;
+    else if (fiatAmt > maxFiat) errMsg = `최대 거래금액 ${maxFiat.toLocaleString()} ${fiat}을 초과합니다.`;
+    else if (fiatAmt < minFiat) errMsg = `최소 거래금액 ${minFiat.toLocaleString()} ${fiat} 미만입니다.`;
+
+    if (warn) {
+      warn.textContent   = errMsg;
+      warn.style.display = errMsg ? "block" : "none";
+    }
+    if (btn) btn.disabled = !!errMsg || qty <= 0;
+  }
+
+  if (inp) {
+    inp.max   = maxHex;
+    inp.min   = minHex || 0;
+    inp.addEventListener("input", recalc);
+    recalc();
+  }
+  if (btn) btn.disabled = true; // 입력 전 비활성화
+}
+
+// ── Chat / messages ───────────────────────────────────────────────────────────
+function subscribeMessages(oid, myAddr) {
+  if (unsubMessages) { unsubMessages(); unsubMessages = null; }
+  if (!oid || !myAddr) return;
+
+  const q = query(
+    collection(db, "orders", oid, "messages"),
+    orderBy("createdAt", "asc")
+  );
+
+  unsubMessages = onSnapshot(q, snap => {
+    const container = $("chatMessages");
+    if (!container) return;
+    container.innerHTML = "";
+    if (snap.empty) {
+      container.innerHTML = `<div class="muted" style="font-size:13px; text-align:center; padding:20px;">메시지 없음</div>`;
+      return;
+    }
+    snap.forEach(d => {
+      const msg  = d.data();
+      const isMine = (msg.sender || "").toLowerCase() === (myAddr || "").toLowerCase();
+      const div  = document.createElement("div");
+      div.className = "chat-msg " + (isMine ? "mine" : "theirs");
+      const time = msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString("ko-KR", {hour:"2-digit",minute:"2-digit"}) : "";
+      div.innerHTML = `<div>${escHtml(msg.text || "")}</div><div class="msg-meta">${shortAddr(msg.sender)} · ${time}</div>`;
+      container.appendChild(div);
     });
+    container.scrollTop = container.scrollHeight;
+  });
+}
 
-    $("btnAccept")?.addEventListener("click", () => doAccept(tradeId));
-    $("btnPaid")?.addEventListener("click", () => doPaid(tradeId));
-    $("btnRelease")?.addEventListener("click", () => doRelease(tradeId));
-    $("btnCancel")?.addEventListener("click", () => doCancel(tradeId));
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
 
-    if (window.ethereum?.on) {
-      window.ethereum.on("accountsChanged", async (accs) => {
-        account = accs?.[0] || null;
-        signer = null;
-        provider = null;
+async function sendMessage(oid) {
+  const input = $("chatInput");
+  const text  = input?.value?.trim();
+  if (!text || !oid) return;
+  const me = activeAccount();
+  if (!me) return setNote("메시지를 보내려면 지갑을 연결하세요.", true);
+  try {
+    await addDoc(collection(db, "orders", oid, "messages"), {
+      sender: me.toLowerCase(),
+      text,
+      createdAt: serverTimestamp(),
+    });
+    input.value = "";
+  } catch (e) {
+    setNote("메시지 전송 실패: " + e.message, true);
+  }
+}
 
-        if (account) await connectWallet();
-        await loadTrade(tradeId);
-      });
+// ── ERC20 approve helper ──────────────────────────────────────────────────────
+async function ensureAllowance(tokenAddr, amountWei) {
+  if (window.jumpWallet) {
+    const rpc   = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+    const token = new ethers.Contract(tokenAddr, ERC20_ABI, rpc);
+    const cur   = await token.allowance(window.jumpWallet.address, CONFIG.CONTRACT.vetEX);
+    if (cur >= amountWei) return;
+    setNote("토큰 승인(approve) 진행 중 (Jump)…");
+    await jumpSendTx(tokenAddr, ERC20_ABI, "approve", [CONFIG.CONTRACT.vetEX, amountWei]);
+    return;
+  }
+  const token = new ethers.Contract(tokenAddr, ERC20_ABI, signer);
+  const cur   = await token.allowance(account, CONFIG.CONTRACT.vetEX);
+  if (cur >= amountWei) return;
+  setNote("토큰 승인(approve) 진행 중…");
+  const tx = await token.approve(CONFIG.CONTRACT.vetEX, amountWei);
+  await tx.wait();
+}
 
-      window.ethereum.on("chainChanged", async () => {
-        signer = null;
-        provider = null;
-        if (account) await connectWallet();
-        await loadTrade(tradeId);
-      });
+// ── Parse tradeId from receipt ────────────────────────────────────────────────
+function parseTradeId(receipt) {
+  const iface = new ethers.Interface(ABI);
+  for (const log of receipt.logs || []) {
+    if (!log.address) continue;
+    if (log.address.toLowerCase() !== CONFIG.CONTRACT.vetEX.toLowerCase()) continue;
+    try {
+      const parsed = iface.parseLog(log);
+      if (parsed?.name === "TradeOpened") return Number(parsed.args.tradeId);
+    } catch {}
+  }
+  return null;
+}
+
+function fiatEnum(fiat) { return fiat === "KRW" ? 0 : 1; }
+
+// ── Load trade ────────────────────────────────────────────────────────────────
+async function loadTrade() {
+  setNote("");
+  try {
+    if (tradeIdParam) {
+      await loadSellTrade(tradeIdParam);
+    } else if (adIdParam) {
+      await loadBuyAd(adIdParam);
+    } else {
+      setNote("URL에 ?id=... 또는 ?adId=... 가 필요합니다.", true);
     }
   } catch (e) {
     console.error(e);
-    showNote(e?.message || String(e), "bad", true);
+    setNote(e?.message || String(e), true);
   }
-})();
+}
+
+// SELL ad: load from ads/{tradeId} + on-chain getTrade
+async function loadSellTrade(tradeId) {
+  // Firestore
+  const snap = await getDoc(doc(db, "ads", String(tradeId)));
+  if (!snap.exists()) {
+    // Try legacy
+    setNote("광고 정보를 찾을 수 없습니다 (tradeId: " + tradeId + ")", true);
+    adData = { type:"SELL", seller:null, amount:0, unitPrice:0, fiat:"KRW" };
+  } else {
+    adData = snap.data();
+  }
+  adData.type = adData.type || "SELL";
+
+  // On-chain
+  const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+  const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
+  let on;
+  try {
+    on = await c.getTrade(Number(tradeId));
+    chainData = on;
+  } catch (e) {
+    dbg("getTrade failed: " + e.message);
+    on = null;
+  }
+
+  const chainSt = on ? Number(on.status ?? on[9] ?? 0) : 0;
+
+  // Merge on-chain data into adData
+  if (on) {
+    adData.seller = adData.seller || (on.seller ?? on[0]);
+    adData.buyer  = adData.buyer  || (on.buyer  ?? on[1]);
+    // Update amount from chain if available
+    const tokenCfg = CONFIG.TOKENS?.HEX;
+    const dec = tokenCfg?.decimals ?? 18;
+    const chainAmount = on.amount ?? on[3];
+    if (chainAmount) {
+      adData.amount = adData.amount || Number(ethers.formatUnits(chainAmount, dec));
+    }
+  }
+
+  // orderId = tradeId for SELL
+  orderId = String(tradeId);
+
+  renderInfo(adData, chainSt, tradeId);
+  renderPaymentMethods(adData);
+  renderActions(adData, chainSt);
+  updateProgress(chainSt);
+
+  // Timer: start when TAKEN
+  if (chainSt === 1) {
+    // takenAt: on-chain 기준 우선, 없으면 Firestore escrowedAt
+    const takenAtSec = Number(on?.takenAt ?? on?.[7] ?? 0);
+    const escAt = takenAtSec > 0 ? takenAtSec * 1000 : (() => {
+      // fallback: Firestore
+      return Date.now(); // will be replaced asynchronously below
+    })();
+    const tmin  = adData.timeoutMin || CONFIG.PAYMENT_TIMEOUT_MIN || 30;
+
+    if (takenAtSec > 0) {
+      startTimer(escAt, tmin, () => renderActions(adData, chainSt));
+    } else {
+      const orderSnap = await getDoc(doc(db, "orders", orderId));
+      const escAtFs = orderSnap.exists() ? (orderSnap.data().escrowedAt?.toMillis?.() ?? Date.now()) : Date.now();
+      startTimer(escAtFs, tmin, () => renderActions(adData, chainSt));
+    }
+  } else {
+    stopTimer();
+  }
+
+  await loadSellerSns(adData.seller);
+  subscribeMessages(orderId, activeAccount());
+  dbg("SELL ad loaded. chainSt=" + chainSt);
+}
+
+// BUY ad: load from ads/{adId} (no on-chain yet)
+async function loadBuyAd(adId) {
+  const snap = await getDoc(doc(db, "ads", adId));
+  if (!snap.exists()) {
+    setNote("구매 광고를 찾을 수 없습니다.", true);
+    return;
+  }
+  adData = { ...snap.data(), docId: adId };
+  adData.type = adData.type || "BUY";
+
+  // If ad has tradeId (seller already responded), load on-chain too
+  if (adData.tradeId) {
+    orderId = String(adData.tradeId);
+    await loadSellTrade(adData.tradeId); // reuse SELL flow
+    return;
+  }
+
+  // Pure BUY ad (no on-chain yet)
+  orderId = adId;
+  renderInfo(adData, -1, null);
+  renderPaymentMethods(adData);
+  renderActions(adData, -1);
+  updateProgress(-1);
+  stopTimer();
+
+  // Show buyer bank info in pm panel
+  if (adData.buyerBank) {
+    const list = $("pmList");
+    if (list) {
+      const b = adData.buyerBank;
+      list.innerHTML = `<div class="pm-card">
+        <div class="pm-type">🏦 구매자 계좌 (판매자가 입금할 계좌)</div>
+        <div class="pm-detail">
+          ${b.bankName    ? `<div><span style="color:var(--muted);">은행:</span> <strong>${b.bankName}</strong></div>` : ""}
+          ${b.accountName ? `<div><span style="color:var(--muted);">예금주:</span> <strong>${b.accountName}</strong></div>` : ""}
+          ${b.accountNumber ? `<div><span style="color:var(--muted);">계좌:</span> <strong class="mono">${b.accountNumber}</strong></div>` : ""}
+        </div>
+      </div>`;
+    }
+  }
+
+  await loadSellerSns(adData.buyer); // for BUY ad, show buyer's SNS
+  subscribeMessages(orderId, activeAccount());
+  dbg("BUY ad loaded. docId=" + adId);
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+// SELL: buyer calls acceptTrade
+async function doAccept() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam);
+
+  // 구매 수량 읽기
+  const buyQty   = Number($("inpBuyAmount")?.value || 0);
+  const price    = Number(adData?.unitPrice || 0);
+  const fiatAmt  = Math.floor(buyQty * price);
+  const fiat     = fiatLabel(adData?.fiat);
+  const minFiat  = Number(adData?.minFiat || 0);
+  const maxFiat  = Number(adData?.maxFiat || adData?.fiatAmount || 0);
+
+  if (!buyQty || buyQty <= 0) return setNote("구매 수량을 입력하세요.", true);
+  if (buyQty > Number(adData?.amount || 0)) return setNote("광고 수량을 초과합니다.", true);
+  if (minFiat && fiatAmt < minFiat) return setNote(`최소 거래금액 ${minFiat.toLocaleString()} ${fiat} 미만입니다.`, true);
+  if (maxFiat && fiatAmt > maxFiat) return setNote(`최대 거래금액 ${maxFiat.toLocaleString()} ${fiat}을 초과합니다.`, true);
+
+  // buyQty(정수 HEX) → wei 변환
+  const dec        = CONFIG.TOKENS?.HEX?.decimals ?? 18;
+  const buyAmtWei  = ethers.parseUnits(String(buyQty), dec);
+
+  try {
+    if (window.jumpWallet) {
+      setNote("거래 신청(acceptTrade) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "acceptTrade", [tradeId, buyAmtWei.toString()]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("거래 신청(acceptTrade) 전송 중…");
+      const tx = await c.acceptTrade(tradeId, buyAmtWei);
+      await tx.wait();
+    }
+    const me = activeAccount();
+    // Create order doc (구매 수량 + 입금 총액 기록)
+    await setDoc(doc(db, "orders", String(tradeId)), {
+      tradeId,
+      adId:       String(tradeId),
+      type:       "SELL",
+      seller:     adData.seller,
+      buyer:      me.toLowerCase(),
+      buyAmount:  buyQty,      // 구매자가 요청한 HEX 수량
+      buyFiat:    fiatAmt,     // 입금 총액
+      fiat:       adData.fiat,
+      status:     "TAKEN",
+      escrowedAt: serverTimestamp(),
+      createdAt:  serverTimestamp(),
+      updatedAt:  serverTimestamp(),
+    });
+    // Update ad
+    await updateDoc(doc(db, "ads", String(tradeId)), {
+      buyer:     me.toLowerCase(),
+      buyAmount: buyQty,
+      buyFiat:   fiatAmt,
+      status:    "TAKEN",
+      updatedAt: serverTimestamp(),
+    });
+    setNote(`거래 신청 완료! 입금 총액: ${fiatAmt.toLocaleString()} ${fiat}`);
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// BUY ad: seller calls openTrade to respond
+async function doSellerAccept() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const me = activeAccount();
+  try {
+    const tokenCfg = CONFIG.TOKENS?.HEX;
+    if (!tokenCfg?.address) throw new Error("CONFIG.TOKENS.HEX 없음");
+    const amount    = adData.amount;
+    const fiatAmt   = adData.fiatAmount || Math.floor(amount * adData.unitPrice);
+    const amountWei = ethers.parseUnits(String(amount), tokenCfg.decimals ?? 18);
+    const buyerAddr = adData.buyer;
+
+    if (!buyerAddr) throw new Error("구매자 주소 없음");
+
+    // 1. Approve
+    await ensureAllowance(tokenCfg.address, amountWei);
+
+    // 2. openTrade with buyer address
+    let receipt;
+    if (window.jumpWallet) {
+      setNote("openTrade 전송 중 (Jump)…");
+      receipt = await jumpSendTx(
+        CONFIG.CONTRACT.vetEX, ABI, "openTrade",
+        [amountWei, buyerAddr, fiatEnum(adData.fiat || "KRW"), fiatAmt, ethers.ZeroHash]
+      );
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("openTrade 전송 중…");
+      const tx = await c.openTrade(
+        amountWei, buyerAddr, fiatEnum(adData.fiat || "KRW"), fiatAmt, ethers.ZeroHash
+      );
+      receipt = await tx.wait();
+    }
+
+    const newTradeId = parseTradeId(receipt);
+    if (!newTradeId) throw new Error("tradeId를 못 찾았습니다. ABI 확인 필요");
+    dbg("BUY→tradeId=" + newTradeId);
+
+    // 3. Update ad doc: now has tradeId + seller
+    await updateDoc(doc(db, "ads", adIdParam), {
+      tradeId: newTradeId,
+      seller:  me.toLowerCase(),
+      status:  "TAKEN",
+      updatedAt: serverTimestamp(),
+    });
+
+    // 4. Create order doc
+    await setDoc(doc(db, "orders", String(newTradeId)), {
+      tradeId:    newTradeId,
+      adId:       adIdParam,
+      type:       "BUY",
+      seller:     me.toLowerCase(),
+      buyer:      buyerAddr.toLowerCase(),
+      status:     "TAKEN",
+      escrowedAt: serverTimestamp(),
+      createdAt:  serverTimestamp(),
+      updatedAt:  serverTimestamp(),
+    });
+
+    setNote("판매 신청 완료! 거래가 시작됩니다.");
+    // Redirect to SELL trade page with new tradeId
+    location.href = "/trade.html?id=" + newTradeId;
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Buyer: markPaid
+async function doPaid() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    const raw = ($("inpRef")?.value || "").trim();
+    const ref = raw ? ethers.keccak256(ethers.toUtf8Bytes(raw)) : ethers.ZeroHash;
+
+    if (window.jumpWallet) {
+      setNote("입금 완료 표시(markPaid) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "markPaid", [tradeId, ref]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("입금 완료 표시(markPaid) 전송 중…");
+      const tx = await c.markPaid(tradeId, ref);
+      await tx.wait();
+    }
+    // Update order
+    if (orderId) {
+      await updateDoc(doc(db, "orders", String(orderId)), {
+        status: "PAID", paymentRef: raw || null, updatedAt: serverTimestamp(),
+      });
+    }
+    setNote("입금 완료 표시 완료!");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Seller: release
+async function doRelease() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    if (window.jumpWallet) {
+      setNote("토큰 이체(release) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "release", [tradeId]);
+    } else {
+      const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("토큰 이체(release) 전송 중…");
+      const gas = await c.release.estimateGas(tradeId).catch(() => null);
+      const ov  = gas ? { gasLimit: (gas * 130n) / 100n } : { gasLimit: 900000n };
+      const tx  = await c.release(tradeId, ov);
+      await tx.wait();
+    }
+    // Update order + ad
+    const updates = { status: "RELEASED", updatedAt: serverTimestamp() };
+    if (orderId) await updateDoc(doc(db, "orders", String(orderId)), updates);
+    const adDocId = tradeIdParam || adIdParam;
+    if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), { status: "RELEASED", updatedAt: serverTimestamp() });
+
+    // Update trade stats: both seller and buyer +1 total, +1 completed
+    await Promise.allSettled([
+      updateTradeStats(adData?.seller, true),
+      updateTradeStats(adData?.buyer,  true),
+    ]);
+
+    setNote("토큰 이체 완료! 거래가 완료되었습니다. 🎉");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Seller: cancel
+async function doCancel() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    if (window.jumpWallet) {
+      setNote("거래 취소(cancelBySeller) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "cancelBySeller", [tradeId]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("거래 취소(cancelBySeller) 전송 중…");
+      const tx = await c.cancelBySeller(tradeId);
+      await tx.wait();
+    }
+    const adDocId = tradeIdParam || adIdParam;
+    if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), { status: "CANCELED", updatedAt: serverTimestamp() });
+    if (orderId) await updateDoc(doc(db, "orders", String(orderId)), { status: "CANCELED", updatedAt: serverTimestamp() }).catch(()=>{});
+
+    // Update trade stats: seller +1 total only (not completed)
+    await updateTradeStats(adData?.seller, false);
+
+    setNote("거래가 취소되었습니다.");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Buyer: cancel (timeout elapsed)
+async function doCancelByBuyer() {
+  if (!confirm("타임아웃으로 거래를 취소하시겠습니까? 에스크로된 HEX는 판매자에게 반환됩니다.")) return;
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    if (window.jumpWallet) {
+      setNote("거래 취소(cancelByBuyer) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "cancelByBuyer", [tradeId]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("거래 취소(cancelByBuyer) 전송 중…");
+      const tx = await c.cancelByBuyer(tradeId);
+      await tx.wait();
+    }
+    const adDocId = tradeIdParam || adIdParam;
+    if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), { status: "CANCELED", updatedAt: serverTimestamp() });
+    if (orderId) await updateDoc(doc(db, "orders", String(orderId)), { status: "CANCELED", canceledBy: "buyer", updatedAt: serverTimestamp() }).catch(()=>{});
+
+    await updateTradeStats(adData?.buyer, false);
+
+    setNote("거래가 취소되었습니다. (구매자 취소)");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Seller: cancel open ad (no buyer yet) — reclaim escrowed HEX
+async function doCancelOpen() {
+  if (!confirm("광고를 취소하고 에스크로된 HEX를 회수하시겠습니까?")) return;
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    if (window.jumpWallet) {
+      setNote("광고 취소(cancelBySeller) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "cancelBySeller", [tradeId]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("광고 취소(cancelBySeller) 전송 중…");
+      const tx = await c.cancelBySeller(tradeId);
+      await tx.wait();
+    }
+    const adDocId = tradeIdParam || adIdParam;
+    if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), { status: "CANCELED", updatedAt: serverTimestamp() });
+    setNote("광고가 취소되었습니다. 에스크로된 HEX가 반환되었습니다. ✅");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// Seller: dispute
+async function doDispute() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  try {
+    if (window.jumpWallet) {
+      setNote("분쟁 신청(dispute) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "dispute", [tradeId]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("분쟁 신청(dispute) 전송 중…");
+      const tx = await c.dispute(tradeId);
+      await tx.wait();
+    }
+    setNote("분쟁이 접수되었습니다. 관리자에게 문의하세요.");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+$("btnConnect")?.addEventListener("click", async () => {
+  try {
+    await connectWallet();
+    if (adData) {
+      renderRoleBadge(adData, activeAccount());
+      const chainSt = chainData ? Number(chainData.status ?? chainData[9] ?? 0) : -1;
+      renderActions(adData, chainSt);
+      subscribeMessages(orderId, activeAccount());
+    }
+  } catch (e) { setNote(e.message, true); }
+});
+
+$("btnAccept")?.addEventListener("click",       doAccept);
+$("btnSellerAccept")?.addEventListener("click", doSellerAccept);
+$("btnPaid")?.addEventListener("click",         doPaid);
+$("btnRelease")?.addEventListener("click",      doRelease);
+$("btnCancelOpen")?.addEventListener("click",   doCancelOpen);
+$("btnCancel")?.addEventListener("click",         doCancel);
+$("btnCancelByBuyer")?.addEventListener("click", doCancelByBuyer);
+$("btnDispute")?.addEventListener("click",        doDispute);
+$("btnSendMsg")?.addEventListener("click",      () => sendMessage(orderId));
+$("chatInput")?.addEventListener("keydown",     e => { if (e.key === "Enter") sendMessage(orderId); });
+
+// Jump auto-connect
+window.addEventListener("jump:connected", async (e) => {
+  if (!account && e.detail?.address) {
+    account = e.detail.address;
+    $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
+    $("btnConnect").textContent = "연결됨";
+    $("btnConnect").disabled    = true;
+    if (adData) {
+      renderRoleBadge(adData, account);
+      const chainSt = chainData ? Number(chainData.status ?? chainData[9] ?? 0) : -1;
+      renderActions(adData, chainSt);
+      subscribeMessages(orderId, account);
+    }
+  }
+});
+
+// Auto-connect
+if (window.jumpWallet?.address) {
+  account = window.jumpWallet.address;
+  $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
+  $("btnConnect").textContent = "연결됨";
+  $("btnConnect").disabled    = true;
+} else if (window.ethereum) {
+  try {
+    const accs = await window.ethereum.request({ method: "eth_accounts" });
+    if (accs.length) {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer   = await provider.getSigner();
+      account  = await signer.getAddress();
+      $("walletAddr").textContent = "🦊 " + account.slice(0,6) + "…" + account.slice(-4);
+      $("btnConnect").textContent = "연결됨";
+      $("btnConnect").disabled    = true;
+    }
+  } catch (_) {}
+}
+
+await loadTrade();
+dbg("trade.js ready");
