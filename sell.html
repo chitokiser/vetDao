@@ -4,102 +4,159 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VET DAO - 판매등록</title>
-
+  <title>광고 등록 - VET EX</title>
   <link rel="icon" href="/assets/img/favicon.png" />
   <link rel="stylesheet" href="/assets/css/reset.css" />
   <link rel="stylesheet" href="/assets/css/theme.css" />
   <link rel="stylesheet" href="/assets/css/app.css" />
+  <style>
+    .ad-type-toggle { display:flex; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:20px; }
+    .ad-type-btn    { flex:1; padding:12px 0; text-align:center; font-size:14px; font-weight:600;
+                      background:transparent; border:none; color:var(--muted); cursor:pointer; transition:.15s; }
+    .ad-type-btn.active.sell { background:rgba(249,115,22,0.15); color:#f97316; }
+    .ad-type-btn.active.buy  { background:rgba(34,197,94,0.15);  color:#22c55e; }
+  </style>
 </head>
-
 <body class="dark">
   <div class="page">
     <div id="site-header"></div>
-
     <main class="site-main">
       <div class="main-wrap">
-        <section class="hero">
-          <div class="block-title">판매등록</div>
-          <div class="block-text" style="margin-top:8px;">
-            판매할 토큰(HEX 또는 USDT) 선택 후, KRW/VND 결제 통화를 선택하여 등록하세요.
-          </div>
 
-          <div class="note" style="margin-top:12px; display:block;">
-            안내: 판매등록 전에 프로필에서 SNS(카카오/텔레그램 등) 최소 1개를 등록해야 합니다. (파이어베이스 저장)
-            <span style="display:inline-block; width:10px;"></span>
-            <a class="btn" href="/profile.html" style="padding:6px 10px; font-size:12px;">프로필로 가기</a>
+        <section class="hero">
+          <div class="block-title">광고 등록</div>
+          <div class="block-text" style="margin-top:6px;">
+            판매 광고: HEX를 팔고 싶을 때 &nbsp;·&nbsp; 구매 광고: HEX를 사고 싶을 때
           </div>
         </section>
 
         <div class="hr"></div>
 
-        <section class="panel" style="margin-top:14px;">
-          <div class="panel-top">
+        <!-- 지갑 -->
+        <div class="panel" style="padding:14px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
             <div>
-              <div class="muted" style="margin-top:2px;">
-                지갑을 연결한 뒤 판매등록을 진행하세요.
-              </div>
+              <span class="muted" style="font-size:13px;">지갑: </span>
+              <span id="walletAddr" class="mono" style="font-size:13px;">미연결</span>
             </div>
+            <button class="btn" id="btnConnect">지갑 연결</button>
+          </div>
+        </div>
 
-            <div class="actions" style="display:flex; gap:10px;">
-              <button class="btn" id="btnConnect">연결됨/지갑연결</button>
-              <button class="btn primary" id="btnSubmit">판매등록</button>
-            </div>
+        <div id="note" class="note" style="display:none; margin-bottom:14px; padding:10px 14px;"></div>
+
+        <section class="panel" style="padding:16px;">
+
+          <!-- 광고 유형 토글 -->
+          <div class="ad-type-toggle">
+            <button class="ad-type-btn active sell" id="btnTypeSell" data-type="SELL">
+              📤 판매 광고 &nbsp; <span style="font-size:12px; font-weight:400;">HEX → 현금</span>
+            </button>
+            <button class="ad-type-btn buy" id="btnTypeBuy" data-type="BUY">
+              📥 구매 광고 &nbsp; <span style="font-size:12px; font-weight:400;">현금 → HEX</span>
+            </button>
           </div>
 
-          <div class="walletbar" style="margin-top:10px;">
-            <div class="pill">지갑 상태: <span id="walletLine" class="onchain">미연결</span></div>
+          <!-- 판매 광고 안내 -->
+          <div id="sellInfo" class="note" style="display:block; margin-bottom:14px; padding:10px 14px; font-size:12px;">
+            💡 판매 광고: HEX가 즉시 스마트컨트랙트 에스크로에 잠깁니다. 구매자가 입금 완료 후 HEX를 받습니다.
           </div>
-
-          <div id="note" class="note" style="display:none; margin-top:10px;"></div>
-
-          <div class="hr"></div>
+          <!-- 구매 광고 안내 -->
+          <div id="buyInfo" class="note" style="display:none; margin-bottom:14px; padding:10px 14px; font-size:12px; border-left-color:#22c55e;">
+            💡 구매 광고: 에스크로 없이 광고만 등록됩니다. 판매자가 신청하면 그때 에스크로가 진행됩니다.
+          </div>
 
           <div class="form-grid">
             <div>
-              <div class="k">판매할 토큰(HEX 또는 USDT)</div>
-              <select class="input" id="token">
-                <option value="HEX">HEX</option>
-                <option value="USDT">USDT</option>
-              </select>
-            </div>
-
-            <div>
-              <div class="k">결제 받을 통화 선택</div>
+              <div class="k">결제 통화</div>
               <select class="input" id="fiat">
-                <option value="KRW">KRW</option>
-                <option value="VND">VND</option>
+                <option value="KRW">KRW (한국 원화)</option>
+                <option value="VND">VND (베트남 동)</option>
               </select>
             </div>
 
             <div>
-              <div class="k">판매할 토큰 수량</div>
-              <input class="input mono" id="amount" value="10" placeholder="예: 10" />
+              <div class="k" id="labelAmount">판매 수량 (HEX) *</div>
+              <input class="input mono" id="amount" placeholder="예: 100" />
             </div>
 
             <div>
-              <div class="k">토큰 개당 가격</div>
-              <input class="input mono" id="unitPrice" value="1380" placeholder="예: 1380" />
+              <div class="k">HEX 1개당 가격 *</div>
+              <input class="input mono" id="unitPrice" placeholder="예: 1380" />
+            </div>
+
+            <div>
+              <div class="k">최소 거래금액</div>
+              <input class="input mono" id="minFiat" placeholder="예: 10000" />
+            </div>
+
+            <div>
+              <div class="k">최대 거래금액</div>
+              <input class="input mono" id="maxFiat" placeholder="예: 500000" />
+            </div>
+
+            <div>
+              <div class="k">타임아웃 (분)</div>
+              <select class="input" id="timeoutMin">
+                <option value="15">15분</option>
+                <option value="30" selected>30분</option>
+                <option value="60">60분</option>
+                <option value="120">2시간</option>
+              </select>
             </div>
 
             <div class="full">
               <div class="k">예상 총액</div>
-              <div class="pill onchain" id="totalFiat" style="margin-top:8px;">-</div>
+              <div class="pill" id="totalFiat" style="margin-top:8px; font-size:14px;">-</div>
             </div>
+
+            <div class="full">
+              <div class="k">거래 조건/안내 (선택)</div>
+              <input class="input" id="terms" placeholder="예: 입금 후 30분 내 처리합니다. 입금자명을 일치시켜 주세요." />
+            </div>
+          </div>
+
+          <!-- 결제수단 선택 (판매 광고만) -->
+          <div id="pmSection" style="margin-top:18px;">
+            <div class="k" style="margin-bottom:10px;">결제수단 선택 * <span class="muted" style="font-size:12px;">(판매자 계좌 — 최소 1개)</span></div>
+            <div id="pmCheckboxes">
+              <div class="muted" style="font-size:13px;">
+                지갑 연결 후 결제수단이 표시됩니다.
+                <a href="/payment-methods.html" style="color:var(--primary); margin-left:6px;">결제수단 등록하기 →</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- 입금 계좌 (구매 광고만) -->
+          <div id="buyerBankSection" style="margin-top:18px; display:none;">
+            <div class="k" style="margin-bottom:10px;">입금 가능 계좌 정보 (선택)</div>
+            <div class="form-grid">
+              <div>
+                <div class="k">은행명</div>
+                <input class="input" id="buyerBank" placeholder="예: 카카오뱅크 / Vietcombank" />
+              </div>
+              <div>
+                <div class="k">예금주</div>
+                <input class="input" id="buyerAccountName" placeholder="예: 홍길동" />
+              </div>
+              <div class="full">
+                <div class="k">계좌번호</div>
+                <input class="input mono" id="buyerAccount" placeholder="예: 3333-01-1234567" />
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+            <button class="btn primary" id="btnSubmit" style="min-width:120px;">광고 등록</button>
           </div>
         </section>
 
-        <div class="hr"></div>
-
-        <div class="panel" style="margin-top:14px;">
-          <div class="muted" style="font-size:12px; line-height:1.5;">
-            debug:
-            <pre id="dbg" style="white-space:pre-wrap; margin-top:10px;"></pre>
-          </div>
+        <div class="panel" style="margin-top:14px; padding:14px;">
+          <pre id="dbg" style="white-space:pre-wrap; font-size:11px; color:var(--muted);"></pre>
         </div>
+
       </div>
     </main>
-
     <div id="site-footer"></div>
   </div>
 
@@ -108,11 +165,10 @@
   <script src="/assets/js/contract.js"></script>
   <script type="module" src="/assets/js/firebase.js"></script>
   <script src="/assets/js/partials.js"></script>
-  <script type="module" src="/assets/js/header-wallet.js"></script>
-  <script>
-    window.loadPartials && window.loadPartials();
+  <script type="module">
+    await window.loadPartials();
+    await import("/assets/js/header-wallet.js");
   </script>
-
   <script type="module" src="/assets/js/pages/sell.js"></script>
 </body>
 </html>

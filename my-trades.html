@@ -1,0 +1,122 @@
+<!-- /my-trades.html -->
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>내 거래 - VET EX</title>
+  <link rel="icon" href="/assets/img/favicon.png" />
+  <link rel="stylesheet" href="/assets/css/reset.css" />
+  <link rel="stylesheet" href="/assets/css/theme.css" />
+  <link rel="stylesheet" href="/assets/css/app.css" />
+  <style>
+    .trade-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 10px;
+      background: rgba(255,255,255,0.02);
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 12px;
+      align-items: center;
+      transition: background .12s;
+    }
+    .trade-card:hover { background: rgba(255,255,255,0.04); }
+
+    /* 상태별 왼쪽 보더 색 */
+    .trade-card.st-open     { border-left: 3px solid #f97316; }
+    .trade-card.st-taken    { border-left: 3px solid #fbbf24; }
+    .trade-card.st-paid     { border-left: 3px solid #818cf8; }
+    .trade-card.st-released { border-left: 3px solid #22c55e; }
+    .trade-card.st-canceled { border-left: 3px solid #64748b; }
+
+    .st-badge {
+      display: inline-flex; align-items: center;
+      padding: 3px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 700; white-space: nowrap;
+    }
+    .st-open     { background: rgba(249,115,22,0.15); color: #f97316; }
+    .st-taken    { background: rgba(251,191,36,0.15);  color: #fbbf24; }
+    .st-paid     { background: rgba(129,140,248,0.15); color: #818cf8; }
+    .st-released { background: rgba(34,197,94,0.15);   color: #22c55e; }
+    .st-canceled { background: rgba(100,116,139,0.15); color: #94a3b8; }
+
+    .attention { animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.4); }
+      50%      { box-shadow: 0 0 0 6px rgba(251,191,36,0); }
+    }
+
+    .trade-card .info { min-width: 0; }
+    .trade-card .info .title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .trade-card .info .meta  { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+    .tab-row { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 16px; }
+    .tab-btn { flex: 1; padding: 10px 0; text-align: center; font-size: 13px; font-weight: 600;
+               background: transparent; border: none; color: var(--muted); cursor: pointer; transition: .15s; }
+    .tab-btn.active { background: rgba(249,115,22,0.15); color: #f97316; }
+
+    .empty { text-align: center; padding: 48px 20px; color: var(--muted); font-size: 14px; }
+
+    @media (max-width: 600px) {
+      .trade-card { grid-template-columns: 1fr auto; }
+      .trade-card .type-col { display: none; }
+    }
+  </style>
+</head>
+<body class="dark">
+  <div class="page">
+    <div id="site-header"></div>
+    <main class="site-main">
+      <div class="main-wrap">
+
+        <section class="hero" style="padding-bottom:16px;">
+          <div class="block-title">내 거래</div>
+          <div class="block-text" style="margin-top:6px;">내가 등록한 광고 및 진행 중인 거래</div>
+        </section>
+
+        <!-- 지갑 -->
+        <div class="panel" style="padding:12px 16px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <span class="muted" style="font-size:13px;">지갑: </span>
+            <span id="walletAddr" class="mono" style="font-size:13px;">미연결</span>
+          </div>
+          <button class="btn" id="btnConnect">지갑 연결</button>
+        </div>
+
+        <div id="note" class="note" style="display:none; margin-bottom:14px; padding:10px 14px;"></div>
+
+        <!-- 탭 -->
+        <div class="tab-row">
+          <button class="tab-btn active" id="tabSell" data-tab="sell">📤 판매 광고 (내가 판매)</button>
+          <button class="tab-btn"        id="tabBuy"  data-tab="buy" >📥 구매 광고 (내가 구매)</button>
+        </div>
+
+        <!-- 주의 안내 -->
+        <div id="attentionBanner" class="note" style="display:none; margin-bottom:14px; padding:10px 14px; border-left-color:#fbbf24; color:#fbbf24;">
+          ⚠ 구매자가 거래를 신청했습니다! 아래 거래를 확인하고 진행해 주세요.
+        </div>
+
+        <!-- 목록 -->
+        <div id="tradeList">
+          <div class="empty">지갑을 연결하면 내 거래 목록이 표시됩니다.</div>
+        </div>
+
+      </div>
+    </main>
+    <div id="site-footer"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/contract.js"></script>
+  <script type="module" src="/assets/js/firebase.js"></script>
+  <script src="/assets/js/partials.js"></script>
+  <script type="module">
+    await window.loadPartials();
+    await import("/assets/js/header-wallet.js");
+  </script>
+  <script type="module" src="/assets/js/pages/my-trades.js"></script>
+</body>
+</html>

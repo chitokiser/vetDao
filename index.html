@@ -1,59 +1,138 @@
+<!-- /index.html -->
 <!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>USDT&HEX&현금 P2P거래소</title>
-
-  <!-- 파비콘 -->
+  <title>HEX P2P 거래소 - VET EX</title>
   <link rel="icon" href="/assets/img/favicon.png" />
-
-  <!-- CSS (중복 로드 금지) -->
   <link rel="stylesheet" href="/assets/css/reset.css" />
   <link rel="stylesheet" href="/assets/css/theme.css" />
   <link rel="stylesheet" href="/assets/css/app.css" />
+  <style>
+    /* ── P2P 테이블 ── */
+    .p2p-wrap { background: rgba(255,255,255,0.02); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+
+    .p2p-tabs { display: flex; border-bottom: 1px solid var(--line); }
+    .p2p-tab  { flex: 1; padding: 14px 0; text-align: center; font-size: 15px; font-weight: 600;
+                cursor: pointer; color: var(--muted); border: none; background: transparent; transition: .15s; }
+    .p2p-tab.active { color: #f97316; border-bottom: 2px solid #f97316; }
+
+    .p2p-filter { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .fiat-btn   { padding: 5px 16px; border-radius: 999px; border: 1px solid var(--line);
+                  background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; transition: .15s; }
+    .fiat-btn.active { background: rgba(249,115,22,0.15); border-color: #f97316; color: #f97316; font-weight: 600; }
+
+    .p2p-header { display: grid; grid-template-columns: 2fr 2fr 2.5fr 1fr; gap: 8px;
+                  padding: 10px 20px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+
+    .p2p-row  { display: grid; grid-template-columns: 2fr 2fr 2.5fr 1fr; gap: 8px; align-items: center;
+                padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background .12s; }
+    .p2p-row:last-child { border-bottom: none; }
+    .p2p-row:hover { background: rgba(255,255,255,0.03); }
+
+    .seller-col { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .seller-avatar { width: 36px; height: 36px; border-radius: 50%; background: rgba(138,125,255,0.25);
+                     display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700;
+                     color: #8a7dff; flex-shrink: 0; }
+    .seller-name  { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .online-dot   { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .online-dot.online  { background: #22c55e; box-shadow: 0 0 4px #22c55e; }
+    .online-dot.away    { background: #fbbf24; }
+    .online-dot.offline { background: #64748b; }
+    .seller-meta  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .price-main { font-size: 20px; font-weight: 700; color: #f97316; line-height: 1; }
+    .price-unit { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .limits-avail  { font-size: 13px; margin-bottom: 4px; }
+    .limits-range  { font-size: 12px; color: var(--muted); }
+    .pm-tags       { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .pm-tag        { font-size: 11px; padding: 2px 8px; border-radius: 4px;
+                     background: rgba(255,255,255,0.06); border: 1px solid var(--line); white-space: nowrap; }
+
+    .action-col { display: flex; justify-content: flex-end; }
+    .buy-btn    { padding: 8px 20px; border-radius: 8px; background: #f97316; border: none;
+                  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: .15s; white-space: nowrap; }
+    .buy-btn:hover { background: #ea6c0a; transform: translateY(-1px); }
+
+    .p2p-empty { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 14px; }
+    .p2p-loading { text-align: center; padding: 40px; color: var(--muted); }
+
+    @media (max-width: 680px) {
+      .p2p-header { display: none; }
+      .p2p-row    { grid-template-columns: 1fr auto; grid-template-rows: auto auto; gap: 10px; padding: 14px 14px; }
+      .seller-col { grid-column: 1; grid-row: 1; }
+      .action-col { grid-column: 2; grid-row: 1; }
+      .price-col  { grid-column: 1; grid-row: 2; }
+      .limits-col { grid-column: 1 / -1; grid-row: 3; }
+    }
+  </style>
 </head>
-<body>
+<body class="dark">
   <div class="page">
     <div id="site-header"></div>
 
     <main class="site-main">
       <div class="main-wrap">
-        <section class="hero">
-          <div class="block-title">우리들의 P2P 토큰 거래소</div>
-          <div class="block-text" style="margin-top:8px;">
-            USDT 또는 HEX를 원하는 법정화폐를 받고 판매하세요.<br />
-            HEX를 매수하면 거래금액에 비례하여 VET을 보너스로 받습니다
+
+        <section class="hero" style="padding-bottom:16px;">
+          <div class="block-title">HEX P2P 거래소</div>
+          <div class="block-text" style="margin-top:6px;">
+            에스크로 보호 거래 · HEX 직거래 · KRW / VND
           </div>
         </section>
 
-        <div class="hr"></div>
+        <div class="p2p-wrap">
+          <!-- 탭 -->
+          <div class="p2p-tabs">
+            <button class="p2p-tab active" id="tabBuy">구매</button>
+            <button class="p2p-tab" id="tabSell">판매</button>
+          </div>
 
-        <section class="market">
-          <div class="block-title" style="font-size:20px;">매매 리스트</div>
-          <div id="tradeList" style="margin-top:10px;"></div>
-        </section>
+          <!-- 필터 -->
+          <div class="p2p-filter">
+            <span style="font-size:12px; color:var(--muted); margin-right:4px;">통화</span>
+            <button class="fiat-btn active" data-fiat="KRW">KRW</button>
+            <button class="fiat-btn"        data-fiat="VND">VND</button>
+            <button class="fiat-btn"        data-fiat="">전체</button>
+            <div style="flex:1;"></div>
+            <select id="sortBy" style="background:transparent; border:1px solid var(--line); border-radius:8px; color:var(--muted); font-size:12px; padding:4px 10px; cursor:pointer;">
+              <option value="price_asc">가격 낮은순</option>
+              <option value="price_desc">가격 높은순</option>
+              <option value="amount_desc">수량 많은순</option>
+              <option value="newest">최신순</option>
+            </select>
+          </div>
+
+          <!-- 컬럼 헤더 -->
+          <div class="p2p-header">
+            <div>광고주</div>
+            <div>가격</div>
+            <div>수량 / 한도 / 결제</div>
+            <div style="text-align:right;">거래</div>
+          </div>
+
+          <!-- 광고 목록 -->
+          <div id="adList">
+            <div class="p2p-loading">불러오는 중…</div>
+          </div>
+        </div>
+
       </div>
     </main>
 
     <div id="site-footer"></div>
   </div>
 
-  <!-- 전역 설정/컨트랙트/파이어베이스/partials -->
- <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
-<script src="/assets/js/config.js"></script>
-<script src="/assets/js/contract.js"></script>
-<script type="module" src="/assets/js/firebase.js"></script>
-<script src="/assets/js/partials.js"></script>
-
-<script type="module">
-  // header/footer 주입 완료까지 보장
-  await window.loadPartials();
-  // 그 다음에 지갑 기능 로드
-  await import("/assets/js/header-wallet.js");
-</script>
-
-<script type="module" src="/assets/js/pages/index.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/contract.js"></script>
+  <script type="module" src="/assets/js/firebase.js"></script>
+  <script src="/assets/js/partials.js"></script>
+  <script type="module">
+    await window.loadPartials();
+    await import("/assets/js/header-wallet.js");
+  </script>
+  <script type="module" src="/assets/js/pages/index.js"></script>
 </body>
 </html>

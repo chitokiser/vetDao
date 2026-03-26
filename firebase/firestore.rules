@@ -2,20 +2,87 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 공개로 보여줄 것들만 read 허용
+    // ── 헬퍼 ────────────────────────────────────────────────────────────────
+    // 익명 로그인 포함, Firebase Auth 인증된 모든 사용자
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    // ── 결제수단 ─────────────────────────────────────────────────────────────
+    // 자신의 결제수단만 읽기/쓰기 (user 필드 = 지갑주소 소문자)
+    match /payment_methods/{pmId} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.user is string
+                    && request.resource.data.user.size() > 0;
+      allow update: if isAuthed()
+                    && resource.data.user == request.resource.data.user;
+      allow delete: if isAuthed();
+    }
+
+    // ── 광고 (ads) ──────────────────────────────────────────────────────────
+    // 누구나 읽기, 인증된 사용자만 생성, 자신의 광고만 수정/삭제
+    match /ads/{adId} {
+      allow read: if true;
+      allow create: if isAuthed()
+                    && (request.resource.data.seller is string
+                        || request.resource.data.buyer is string);
+      allow update: if isAuthed();
+      allow delete: if isAuthed();
+    }
+
+    // ── 주문 (orders) ───────────────────────────────────────────────────────
+    match /orders/{tradeId} {
+      allow read:   if true;
+      allow create: if isAuthed();
+      allow update: if isAuthed();
+      allow delete: if false;
+
+      // 주문 메시지 서브컬렉션
+      match /messages/{msgId} {
+        allow read:   if isAuthed();
+        allow create: if isAuthed();
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+
+    // ── 기존 trades 컬렉션 (레거시 호환) ────────────────────────────────────
     match /trades/{tradeId} {
       allow read: if true;
-      allow write: if false; // 직접 수정 금지 (서버로만)
+      allow write: if isAuthed();
     }
 
-    match /profiles/{address} {
-      allow read: if true;   // 판매자 연락처는 누구나 볼 수 있게
-      allow write: if false; // 직접 수정 금지 (서버로만)
+    // trades_{contract} 패턴 (동적 컬렉션)
+    match /{tradeCol}/{tradeId} {
+      allow read: if true;
+      allow write: if isAuthed()
+                   && tradeCol.matches('trades_0x[0-9a-fA-F]+');
     }
 
-    // 나머지 전부 차단
+    // ── 사용자 프로필 / 통계 ─────────────────────────────────────────────────
+    match /users/{address} {
+      allow read: if true;
+      allow write: if isAuthed();
+    }
+
+    // ── 신고 ─────────────────────────────────────────────────────────────────
+    match /reports/{reportId} {
+      allow read:   if isAuthed();
+      allow create: if isAuthed();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── 관리자 액션 (관리자만) ───────────────────────────────────────────────
+    match /admin_actions/{docId} {
+      allow read, write: if false; // 서버/Firebase Console에서만
+    }
+
+    // ── 나머지 전부 차단 ─────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
+
   }
 }

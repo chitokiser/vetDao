@@ -1,6 +1,8 @@
+// /assets/js/firebase.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD5RSdkYT4ibBxkz2gBXu0z_F-C_NgGRps",
@@ -13,12 +15,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-window.db = getFirestore(app);
+window.db      = getFirestore(app);
+window.storage = getStorage(app);
 
 const auth = getAuth(app);
 window.auth = auth;
 
-// 🔑 핵심
 window.firebaseReady = (async () => {
   try {
     await signInAnonymously(auth);

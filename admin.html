@@ -1,77 +1,100 @@
+<!-- /admin.html -->
 <!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin - Fees</title>
+  <title>관리자 - VET EX</title>
+  <link rel="icon" href="/assets/img/favicon.png" />
   <link rel="stylesheet" href="/assets/css/reset.css" />
   <link rel="stylesheet" href="/assets/css/theme.css" />
   <link rel="stylesheet" href="/assets/css/app.css" />
 </head>
-<body>
+<body class="dark">
   <div class="page">
     <div id="site-header"></div>
- 
 
-    <main class="container">
-      <section class="card">
-        <div class="row row-between">
-          <div>
-            <div class="h2">USDT 수수료</div>
-            <div class="muted">컨트랙트에 누적된 pendingUsdtFee 를 전액 이체합니다.</div>
-          </div>
-          <div class="pill" id="netPill">opBNB</div>
+    <main class="site-main">
+      <div class="main-wrap">
+
+        <!-- 접근 불가 화면 (기본 표시, 관리자 확인 후 숨김) -->
+        <div id="adminDenied">
+          <section class="hero" style="text-align:center; padding:60px 0;">
+            <div class="block-title" style="color:var(--danger);">🔒 접근 제한</div>
+            <div class="block-text" style="margin-top:12px;">
+              관리자 계정(Google)으로 로그인해야 접근할 수 있습니다.
+            </div>
+            <div style="margin-top:20px;">
+              <button class="btn primary" onclick="document.getElementById('btnGoogleLogin')?.click()">
+                구글로 로그인
+              </button>
+            </div>
+          </section>
         </div>
 
-        <div class="hr"></div>
+        <!-- 관리자 전용 콘텐츠 (기본 숨김) -->
+        <div id="adminContent" style="display:none;">
 
-        <div class="grid2">
-          <div class="box">
-            <div class="label">pendingUsdtFee (raw)</div>
-            <div class="value" id="pendingRaw">-</div>
-            <div class="hint">USDT 최소단위(wei). 전액 이체는 이 값을 그대로 사용합니다.</div>
-          </div>
+          <section class="hero">
+            <div class="block-title">관리자</div>
+            <div class="block-text" style="margin-top:8px;">
+              수수료 출금 및 컨트랙트 관리
+            </div>
+          </section>
 
-          <div class="box">
-            <div class="label">내 지갑</div>
-            <div class="value mono" id="myAddr">-</div>
-            <div class="hint">owner 지갑으로 실행해야 성공합니다.</div>
-          </div>
+          <div class="hr"></div>
+
+          <section class="panel" style="padding:16px; margin-bottom:14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+              <div>
+                <div class="block-title" style="font-size:18px;">수수료 출금</div>
+                <div class="muted" style="font-size:13px; margin-top:4px;">컨트랙트에 누적된 수수료를 전액 이체합니다.</div>
+              </div>
+              <div class="pill" id="netPill">opBNB</div>
+            </div>
+
+            <div class="form-grid">
+              <div>
+                <div class="k">pendingHexFee (raw)</div>
+                <div class="pill mono" id="pendingRaw" style="margin-top:6px;">-</div>
+                <div class="muted" style="font-size:11px; margin-top:4px;">HEX 최소단위(wei)</div>
+              </div>
+              <div>
+                <div class="k">내 지갑</div>
+                <div class="pill mono" id="myAddr" style="margin-top:6px;">-</div>
+                <div class="muted" style="font-size:11px; margin-top:4px;">owner 지갑으로 실행해야 성공</div>
+              </div>
+              <div class="full">
+                <div class="k">출금(이체) 주소</div>
+                <input class="input mono" id="toAddr" placeholder="0x..." style="margin-top:6px;" />
+              </div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap;">
+              <button class="btn secondary" id="btnRefresh">새로고침</button>
+              <button class="btn danger"    id="btnWithdrawAll">수수료 전액 이체</button>
+            </div>
+
+            <div class="note" id="note" style="display:none; margin-top:12px; padding:10px 14px;"></div>
+          </section>
+
         </div>
 
-        <div class="hr"></div>
-
-        <div class="form">
-          <label class="label" for="toAddr">출금(이체) 주소</label>
-          <input class="input mono" id="toAddr" placeholder="0x..." />
-
-          <div class="row row-between" style="margin-top:12px;">
-            <button class="btn secondary" id="btnRefresh">새로고침</button>
-            <button class="btn" id="btnWithdrawAll">수수료 전액 이체</button>
-          </div>
-
-          <div class="note" id="note" style="margin-top:12px;"></div>
-        </div>
-      </section>
+      </div>
     </main>
-    
+
     <div id="site-footer"></div>
   </div>
 
-  </div>
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
-<script src="/assets/js/config.js"></script>
-<script src="/assets/js/contract.js"></script>
-<script type="module" src="/assets/js/firebase.js"></script>
-<script src="/assets/js/partials.js"></script>
-
-<script type="module">
-  // header/footer 주입 완료까지 보장
-  await window.loadPartials();
-  // 그 다음에 지갑 기능 로드
-  await import("/assets/js/header-wallet.js");
-</script>
-
-<script type="module" src="/assets/js/pages/admin.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/contract.js"></script>
+  <script type="module" src="/assets/js/firebase.js"></script>
+  <script src="/assets/js/partials.js"></script>
+  <script type="module">
+    await window.loadPartials();
+    await import("/assets/js/header-wallet.js");
+  </script>
+  <script type="module" src="/assets/js/pages/admin.js"></script>
 </body>
 </html>

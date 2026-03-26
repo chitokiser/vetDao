@@ -1,405 +1,331 @@
 // /assets/js/pages/index.js
 import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  getDocs,
+  collection, query, where, orderBy, limit,
+  getDocs, doc, getDoc,
 } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
+await window.firebaseReady;
+
+const db     = window.db;
 const ethers = window.ethers;
 const CONFIG = window.CONFIG;
-const ABI = window.ABI;
-const db = window.db;
+const ABI    = window.ABI;
 
-const $ = (id) => document.getElementById(id);
-const tradeList = $("tradeList");
+const adList = document.getElementById("adList");
 
-function el(tag, attrs = {}, children = []) {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === "class") n.className = v;
-    else if (k === "html") n.innerHTML = v;
-    else n.setAttribute(k, v);
-  }
-  for (const c of children) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-  return n;
+// ── State ─────────────────────────────────────────────────────────────────────
+let allAds   = [];
+let fiatFilter = "KRW";
+let sortKey    = "price_asc";
+let activeTab  = "SELL"; // "SELL" = 구매 탭 (SELL ads), "BUY" = 판매 탭 (BUY ads)
+
+// ── PM label map ──────────────────────────────────────────────────────────────
+const PM_LABEL = {
+  BANK_KR: "🏦 KRW계좌",
+  BANK_VN: "🏦 VND계좌",
+  CASH:    "💵 현금",
+  QR:      "📱 QR",
+};
+
+// ── Online status ─────────────────────────────────────────────────────────────
+function onlineStatus(lastSeen) {
+  if (!lastSeen) return { cls: "offline", label: "오프라인" };
+  const ms   = lastSeen?.toMillis ? lastSeen.toMillis() : Number(lastSeen);
+  const diff = Date.now() - ms;
+  if (diff < 5 * 60 * 1000)  return { cls: "online",  label: "온라인" };
+  if (diff < 30 * 60 * 1000) return { cls: "away",    label: "잠시 자리비움" };
+  return { cls: "offline", label: "오프라인" };
 }
 
-function renderEmpty(msg) {
-  if (!tradeList) return;
-  tradeList.innerHTML = "";
-  tradeList.appendChild(el("div", { class: "pill", style: "padding:14px 16px;" }, [msg]));
-}
-
-function shortAddr(a) {
-  if (!a) return "-";
-  return `${a.slice(0, 6)}...${a.slice(-4)}`;
-}
-
-function fmtNumberLike(x) {
-  const n = Number(x);
-  if (Number.isFinite(n)) return n.toLocaleString();
-  return String(x ?? "-");
-}
-
-function fmtFiat(fiatCode) {
-  if (fiatCode === 0 || fiatCode === "0" || fiatCode === "KRW") return "KRW";
-  if (fiatCode === 1 || fiatCode === "1" || fiatCode === "VND") return "VND";
-  return "-";
-}
-
-function fmtStatusKo(s) {
-  // 0=OPEN,1=TAKEN,2=PAID,3=RELEASED,4=CANCELED,5=DISPUTED,6=RESOLVED
-  const map = ["판매중", "거래수락", "입금완료", "이체완료", "취소", "분쟁중", "분쟁해결"];
-  const n = Number(s);
-  if (Number.isFinite(n) && map[n]) return map[n];
-  return "-";
-}
-
-function fmtStatusColor(s) {
-  // 0=판매중(파랑), 1=거래수락(노랑), 2=입금완료(주황), 3=이체완료(초록), 4=취소(빨강), 5=분쟁중(분홍), 6=분쟁해결(회색)
-  const map = ["#60a5fa", "#fbbf24", "#fb923c", "#22c55e", "#f87171", "#f43f5e", "#94a3b8"];
-  const n = Number(s);
-  return Number.isFinite(n) && map[n] ? map[n] : "var(--muted)";
-}
-
-function symbolFromAddress(addr) {
-  const a = (addr || "").toLowerCase();
-  const tok = CONFIG?.TOKENS || {};
-  const usdt = (tok.USDT?.address || "").toLowerCase();
-  const hex = (tok.HEX?.address || "").toLowerCase();
-  const vet = (tok.VET?.address || "").toLowerCase();
-
-  if (a && a === usdt) return "USDT";
-  if (a && a === hex) return "HEX";
-  if (a && a === vet) return "VET";
-  return "-";
-}
-
-function safeNum(x) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : null;
-}
-
-function calcVetBonus(amountHex, feeBps, price) {
-  // amountHex: HEX 토큰 수량(소수점 포함), feeBps: 수수료 bps, price: BigInt (HEX wei per 1 VET)
-  if (!amountHex || !feeBps || !price || price === 0n) return null;
-  try {
-    const amtStr = Number(amountHex).toFixed(8);
-    const amountWei = ethers.parseUnits(amtStr, 18);
-    const feeWei = amountWei * BigInt(feeBps) / 10_000n;
-    return Number(feeWei / price);
-  } catch {
-    return null;
-  }
-}
-
-function calcTotalFiat(amount, unitPrice) {
-  const a = safeNum(amount);
-  const p = safeNum(unitPrice);
-  if (a === null || p === null) return null;
-  return a * p;
-}
-
-function tradesCollectionNameByContract() {
-  const addr = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
-  if (!addr) return "trades";
-  return "trades_" + addr;
-}
-
-async function fetchVetConfig() {
-  if (!ethers || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX || !ABI?.length) return null;
-  try {
-    const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
-    const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
-    const [feeBps, vetBankAddr] = await Promise.all([c.feeBps(), c.vetBank()]);
-    if (!vetBankAddr || vetBankAddr === ethers.ZeroAddress) return null;
-    const vetBankAbi = ["function price() external view returns (uint256)"];
-    const price = await new ethers.Contract(vetBankAddr, vetBankAbi, provider).price();
-    if (!price || price === 0n) return null;
-    return { feeBps: Number(feeBps), price };
-  } catch (e) {
-    console.warn("fetchVetConfig failed:", e);
-    return null;
-  }
-}
-
-/*
-  ✅ 변경 1: 상태는 "비어있을 때만"이 아니라,
-  Firestore에 뭐가 들어있든 최근 N개는 온체인 status로 항상 덮어쓴다.
-*/
-async function overrideStatusesFromChain(items, max = 30) {
-  if (!ethers || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX) return items;
-  if (!ABI?.length) return items;
-  if (!Array.isArray(items) || items.length === 0) return items;
-
-  const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
-  const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
-
-  const target = items.slice(0, Math.min(max, items.length));
-
-  for (const t of target) {
-    const id = Number(t.tradeId);
-    if (!Number.isFinite(id) || id <= 0) continue;
-    try {
-      const on = await c.getTrade(id);
-      t.status = Number(on.status);
-    } catch (e) {
-      console.warn("status override failed:", id, e);
-    }
-  }
-  return items;
-}
-
-function renderTrades(items, sourceLabel, vetConfig = null) {
-  if (!tradeList) return;
-  tradeList.innerHTML = "";
-
-  tradeList.appendChild(
-    el("div", { class: "muted", style: "margin-bottom:8px; font-size:12px;" }, [
-      `표시 기준: ${sourceLabel}`,
-    ])
-  );
-
-  for (const t of items) {
-    const tradeId = t.tradeId ?? "-";
-    const seller = shortAddr(t.seller);
-
-    const tokenSymbol =
-      t.tokenSymbol ||
-      symbolFromAddress(t.tokenAddress) ||
-      symbolFromAddress(t.token) ||
-      "-";
-
-    const amountText =
-      t.amountStr ??
-      (safeNum(t.amount) !== null ? fmtNumberLike(t.amount) : String(t.amount ?? "-"));
-
-    const fiat = t.fiatLabel || fmtFiat(t.fiat);
-
-    let totalFiatText = "-";
-    if (t.fiatAmount !== undefined && t.fiatAmount !== null && t.fiatAmount !== "") {
-      totalFiatText = `${fmtNumberLike(t.fiatAmount)} ${fiat}`;
-    } else {
-      const total = calcTotalFiat(t.amount, t.unitPrice);
-      if (total !== null) totalFiatText = `${fmtNumberLike(Math.round(total))} ${fiat}`;
-    }
-
-    const statusKo = fmtStatusKo(t.status);
-    const statusColor = fmtStatusColor(t.status);
-    const statusHtml = `<span style="color:${statusColor};font-weight:600;">${statusKo}</span>`;
-
-    let vetBonusText = "";
-    if (tokenSymbol === "HEX" && vetConfig) {
-      const bonus = calcVetBonus(t.amount, vetConfig.feeBps, vetConfig.price);
-      if (bonus !== null && bonus > 0) {
-        vetBonusText = ` / VET보상: +${bonus.toLocaleString()} VET`;
-      }
-    }
-
-    const tokenColor =
-      tokenSymbol === "HEX" ? "#f97316" :
-      tokenSymbol === "USDT" ? "#22c55e" :
-      "var(--muted)";
-
-    const tokenBadgeHtml = `<span style="color:${tokenColor};font-weight:700;">${tokenSymbol}</span>`;
-    const line1Html =
-      `판매토큰: ${tokenBadgeHtml} / 판매개수: ${amountText}${vetBonusText} / 판매금액: ${totalFiatText} / 진행상태: ${statusHtml}`;
-
-    const unitPriceText =
-      t.unitPrice !== undefined && t.unitPrice !== null && t.unitPrice !== ""
-        ? `${fmtNumberLike(t.unitPrice)} ${fiat}`
-        : "-";
-
-    const line2 = `판매자: ${seller} · 단가: ${unitPriceText}`;
-
-    const card = el("div", { class: "card", style: `margin-top:10px; border-left:3px solid ${tokenColor};` }, [
-      el(
-        "div",
-        { class: "card-inner", style: "display:flex; justify-content:space-between; gap:12px; align-items:center;" },
-        [
-          el("div", {}, [
-            el("div", { class: "k", style: "font-size:13px; color:var(--muted);" }, [`tradeId #${tradeId}`]),
-            el("div", { class: "v onchain", html: line1Html, style: "font-size:15px; margin-top:2px; line-height:1.35;" }, []),
-            el("div", { class: "muted", style: "font-size:12px; margin-top:6px;" }, [line2]),
-          ]),
-          el("a", { class: "btn", href: `/trade.html?id=${encodeURIComponent(tradeId)}` }, ["상세보기"]),
-        ]
-      ),
-    ]);
-
-    tradeList.appendChild(card);
-  }
-}
-
-/*
-  ✅ 변경 2: Firestore는 trades + trades_{컨트랙트} 둘 다 읽어서 합친다.
-  (중복 tradeId는 1개로 유지)
-  => 누가 접속하든 리스트가 동일하게 보임
-*/
-async function loadFromFirestoreAll() {
-  if (!db) return { items: [], sources: [] };
-
-  const cols = [];
-  cols.push("trades");
-  const byContract = tradesCollectionNameByContract();
-  if (byContract && byContract !== "trades") cols.push(byContract);
-
-  const sources = [];
-
-  const results = await Promise.allSettled(
-    cols.map(async (colName) => {
-      const q = query(collection(db, colName), orderBy("tradeId", "desc"), limit(60));
-      const snap = await getDocs(q);
-      const arr = [];
-      snap.forEach((d) => arr.push({ ...d.data(), __col: colName }));
-      sources.push(colName);
-      return arr;
+// Fetch lastSeen + trade stats for a list of addresses (batch)
+async function fetchSellerStatus(addresses) {
+  const map = {};
+  await Promise.allSettled(
+    [...new Set(addresses)].map(async addr => {
+      try {
+        const snap = await getDoc(doc(db, "users", addr.toLowerCase()));
+        if (snap.exists()) {
+          const d = snap.data();
+          map[addr.toLowerCase()] = {
+            lastSeen:       d.lastSeen       ?? null,
+            totalTrades:    d.totalTrades    ?? 0,
+            completedTrades: d.completedTrades ?? 0,
+          };
+        }
+      } catch {}
     })
   );
-
-  const merged = new Map(); // tradeId -> doc
-  for (const r of results) {
-    if (r.status !== "fulfilled") continue;
-    for (const item of r.value) {
-      const id = Number(item.tradeId);
-      if (!Number.isFinite(id) || id <= 0) continue;
-
-      // 동일 tradeId가 두 컬렉션에 있으면 "updatedAt"이 더 최신인 걸 우선(없으면 기존 유지)
-      const prev = merged.get(id);
-      if (!prev) {
-        merged.set(id, item);
-        continue;
-      }
-
-      const p = prev?.updatedAt?.toMillis ? prev.updatedAt.toMillis() : Number(prev?.updatedAt || 0);
-      const n = item?.updatedAt?.toMillis ? item.updatedAt.toMillis() : Number(item?.updatedAt || 0);
-      if (Number.isFinite(n) && n >= (Number.isFinite(p) ? p : 0)) {
-        merged.set(id, item);
-      }
-    }
-  }
-
-  const items = Array.from(merged.values()).sort((a, b) => Number(b.tradeId) - Number(a.tradeId));
-  return { items, sources };
+  return map;
 }
 
-// 체인 fallback: 최근 tradeId를 getTrade로 직접 조회
-async function loadFromChainByStorage() {
-  if (!ethers || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX) return [];
-  if (!ABI?.length) return [];
-
-  const provider = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
-  const c = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, provider);
-
-  const decCache = new Map();
-  const ERC20_ABI = ["function decimals() view returns (uint8)"];
-
-  async function getDecimals(tokenAddr) {
-    const key = (tokenAddr || "").toLowerCase();
-    if (decCache.has(key)) return decCache.get(key);
-    try {
-      const erc = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
-      const d = await erc.decimals();
-      const dn = Number(d);
-      decCache.set(key, dn);
-      return dn;
-    } catch {
-      decCache.set(key, 18);
-      return 18;
-    }
-  }
-
-  let nextId;
-  try {
-    nextId = await c.nextTradeId();
-  } catch {
-    nextId = await c.nextTradeId?.() ?? 1;
-  }
-
-  const next = Number(nextId);
-  if (!Number.isFinite(next) || next <= 1) return [];
-
-  const latestId = next - 1;
-  const startId = Math.max(1, latestId - 29);
-
-  const items = [];
-  for (let id = latestId; id >= startId; id--) {
-    try {
-      const t = await c.getTrade(id);
-
-      const seller = t.seller;
-      const tokenAddr = t.token;
-      const amountRaw = t.amount;
-      const fiatAmountRaw = t.fiatAmount;
-
-      const fiat = Number(t.fiat);
-      const status = Number(t.status);
-
-      const dec = await getDecimals(tokenAddr);
-      const amountNum = Number(ethers.formatUnits(amountRaw, dec));
-      const amountStr = Number.isFinite(amountNum)
-        ? amountNum.toLocaleString(undefined, { maximumFractionDigits: 6 })
-        : "-";
-
-      const fiatAmount = Number(fiatAmountRaw);
-      const unitPrice =
-        Number.isFinite(amountNum) && amountNum > 0 && Number.isFinite(fiatAmount)
-          ? Math.round(fiatAmount / amountNum)
-          : "";
-
-      items.push({
-        tradeId: id,
-        seller,
-        tokenAddress: tokenAddr,
-        tokenSymbol: symbolFromAddress(tokenAddr),
-        amount: amountNum,
-        amountStr,
-        fiatAmount: Number.isFinite(fiatAmount) ? fiatAmount : String(fiatAmountRaw),
-        unitPrice,
-        fiat,
-        fiatLabel: fmtFiat(fiat),
-        status,
-      });
-    } catch (e) {
-      console.warn("chain getTrade failed:", id, e);
-    }
-  }
-
-  return items;
+function tradeStatsBadge(info) {
+  if (!info) return "";
+  const total   = info.totalTrades    ?? 0;
+  const done    = info.completedTrades ?? 0;
+  const rate    = total > 0 ? Math.round((done / total) * 100) : null;
+  const rateStr = rate !== null ? `${rate}%` : "-";
+  return `<span style="font-size:10px;color:#94a3b8;margin-left:4px;">📊 ${total}건 · ${rateStr}</span>`;
 }
 
-async function boot() {
-  if (!tradeList) return;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function shortAddr(a) { return a ? a.slice(0,6) + "…" + a.slice(-4) : "-"; }
+function fmtNum(n)    { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString() : "-"; }
+function fmtFiat(c)   {
+  if (c === 0 || c === "0" || c === "KRW") return "KRW";
+  if (c === 1 || c === "1" || c === "VND") return "VND";
+  return String(c ?? "-");
+}
 
-  const vetConfig = await fetchVetConfig();
+// ── Sort & filter ─────────────────────────────────────────────────────────────
+function applyFilter(ads) {
+  return ads.filter(ad => {
+    const matchType = (activeTab === "SELL") ? (ad.type === "SELL" || !ad.type) : (ad.type === "BUY");
+    const matchFiat = !fiatFilter || fmtFiat(ad.fiat) === fiatFilter;
+    return matchType && matchFiat;
+  });
+}
+function applySort(ads) {
+  const copy = [...ads];
+  if (sortKey === "price_asc")   copy.sort((a,b) => (a.unitPrice??0) - (b.unitPrice??0));
+  if (sortKey === "price_desc")  copy.sort((a,b) => (b.unitPrice??0) - (a.unitPrice??0));
+  if (sortKey === "amount_desc") copy.sort((a,b) => (b.amount??0) - (a.amount??0));
+  if (sortKey === "newest")      copy.sort((a,b) => {
+    const ta = a.createdAt?.toMillis?.() ?? Number(a.createdAt ?? 0);
+    const tb = b.createdAt?.toMillis?.() ?? Number(b.createdAt ?? 0);
+    return tb - ta;
+  });
+  return copy;
+}
 
-  // 1) Firestore(전체) 우선: trades + trades_{contract} 병합
+// ── Render SELL ads (구매 탭) ──────────────────────────────────────────────────
+function renderSellAds(ads, statusMap) {
+  const visible = applySort(ads);
+  adList.innerHTML = "";
+
+  if (!visible.length) {
+    adList.innerHTML = `<div class="p2p-empty">
+      ${fiatFilter ? fiatFilter + " 통화의" : ""} 판매 광고가 없습니다.<br>
+      <a href="/sell.html" style="color:#f97316; margin-top:8px; display:inline-block;">첫 판매자 되기 →</a>
+    </div>`;
+    return;
+  }
+
+  for (const ad of visible) {
+    const fiat      = fmtFiat(ad.fiat);
+    const adId      = ad.tradeId ?? ad.docId ?? "-";
+    const ownerRaw  = (ad.seller || "").toLowerCase();
+    const info      = statusMap[ownerRaw] ?? null;
+    const { cls, label } = onlineStatus(info?.lastSeen ?? null);
+    const initials  = ownerRaw ? ownerRaw.slice(2,4).toUpperCase() : "??";
+    const pmTags    = (ad.paymentMethods || []).map(pm =>
+      `<span class="pm-tag">${PM_LABEL[pm.type] ?? pm.type}</span>`
+    ).join("");
+    const minFiat = ad.minFiat ? fmtNum(ad.minFiat) : "0";
+    const maxFiat = ad.maxFiat ? fmtNum(ad.maxFiat) : fmtNum(ad.fiatAmount);
+
+    const row = document.createElement("div");
+    row.className = "p2p-row";
+    row.innerHTML = `
+      <div class="seller-col">
+        <div class="seller-avatar">${initials}</div>
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="seller-name mono">${shortAddr(ad.seller)}</span>
+            <span class="online-dot ${cls}" title="${label}"></span>
+          </div>
+          <div class="seller-meta">${label} · HEX${tradeStatsBadge(info)}</div>
+        </div>
+      </div>
+      <div>
+        <div class="price-main">${fmtNum(ad.unitPrice)}</div>
+        <div class="price-unit">${fiat} / HEX</div>
+      </div>
+      <div>
+        <div class="limits-avail">
+          <span class="muted" style="font-size:11px;">수량</span>
+          <strong style="margin-left:4px;">${fmtNum(ad.amount)} HEX</strong>
+        </div>
+        <div class="limits-range">${minFiat} – ${maxFiat} ${fiat}</div>
+        <div class="pm-tags">${pmTags}</div>
+      </div>
+      <div class="action-col">
+        <button class="buy-btn" onclick="location.href='/trade.html?id=${encodeURIComponent(adId)}'">
+          구매
+        </button>
+      </div>`;
+    adList.appendChild(row);
+  }
+}
+
+// ── Render BUY ads (판매 탭) ───────────────────────────────────────────────────
+function renderBuyAds(ads, statusMap) {
+  const visible = applySort(ads);
+  adList.innerHTML = "";
+
+  if (!visible.length) {
+    adList.innerHTML = `<div class="p2p-empty">
+      ${fiatFilter ? fiatFilter + " 통화의" : ""} 구매 광고가 없습니다.<br>
+      <a href="/sell.html" style="color:#22c55e; margin-top:8px; display:inline-block;">구매 광고 등록하기 →</a>
+    </div>`;
+    return;
+  }
+
+  for (const ad of visible) {
+    const fiat     = fmtFiat(ad.fiat);
+    const adId     = ad.docId ?? "-";
+    const ownerRaw = (ad.buyer || "").toLowerCase();
+    const info     = statusMap[ownerRaw] ?? null;
+    const { cls, label } = onlineStatus(info?.lastSeen ?? null);
+    const initials = ownerRaw ? ownerRaw.slice(2,4).toUpperCase() : "??";
+    const minFiat  = ad.minFiat ? fmtNum(ad.minFiat) : "0";
+    const maxFiat  = ad.maxFiat ? fmtNum(ad.maxFiat) : fmtNum(ad.fiatAmount);
+
+    const row = document.createElement("div");
+    row.className = "p2p-row";
+    row.innerHTML = `
+      <div class="seller-col">
+        <div class="seller-avatar" style="background:rgba(34,197,94,0.2);color:#22c55e;">${initials}</div>
+        <div style="min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="seller-name mono">${shortAddr(ad.buyer)}</span>
+            <span class="online-dot ${cls}" title="${label}"></span>
+          </div>
+          <div class="seller-meta">${label} · HEX${tradeStatsBadge(info)}</div>
+        </div>
+      </div>
+      <div>
+        <div class="price-main" style="color:#22c55e;">${fmtNum(ad.unitPrice)}</div>
+        <div class="price-unit">${fiat} / HEX</div>
+      </div>
+      <div>
+        <div class="limits-avail">
+          <span class="muted" style="font-size:11px;">수량</span>
+          <strong style="margin-left:4px;">${fmtNum(ad.amount)} HEX</strong>
+        </div>
+        <div class="limits-range">${minFiat} – ${maxFiat} ${fiat}</div>
+      </div>
+      <div class="action-col">
+        <button class="buy-btn" style="background:#22c55e;"
+          onclick="location.href='/trade.html?adId=${encodeURIComponent(adId)}&type=BUY'">
+          판매
+        </button>
+      </div>`;
+    adList.appendChild(row);
+  }
+}
+
+// ── Render dispatcher ─────────────────────────────────────────────────────────
+function renderAds(ads, statusMap = {}) {
+  const filtered = applyFilter(ads);
+  if (activeTab === "SELL") {
+    renderSellAds(filtered, statusMap);
+  } else {
+    renderBuyAds(filtered, statusMap);
+  }
+}
+
+// ── Load ──────────────────────────────────────────────────────────────────────
+async function loadAds() {
+  adList.innerHTML = `<div class="p2p-loading">불러오는 중…</div>`;
   try {
-    const { items: fsItems, sources } = await loadFromFirestoreAll();
-    if (fsItems.length > 0) {
-      // 표시 상태는 항상 온체인을 우선
-      await overrideStatusesFromChain(fsItems, 30);
-      renderTrades(fsItems.slice(0, 30), `Firestore(${sources.join(",")}) + onchain(status override)`, vetConfig);
-      return;
+    const q    = query(collection(db, "ads"), where("status","==","OPEN"), orderBy("createdAt","desc"), limit(100));
+    const snap = await getDocs(q);
+    allAds = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+
+    if (!allAds.length) {
+      // Legacy fallback
+      const addr    = (CONFIG?.CONTRACT?.vetEX || "").toLowerCase();
+      const colName = addr ? "trades_" + addr : "trades";
+      const q2  = query(collection(db, colName), orderBy("tradeId","desc"), limit(50));
+      const s2  = await getDocs(q2);
+      allAds = s2.docs.map(d => ({ ...d.data(), type: "SELL", status: "OPEN", paymentMethods: [] }));
     }
+
+    // Fetch online status for all owners
+    const addresses = allAds.map(a => a.seller || a.buyer).filter(Boolean);
+    const statusMap = await fetchSellerStatus(addresses);
+    _lastStatusMap  = statusMap;
+
+    // Override chain status for SELL ads (top 20)
+    const sellAds = allAds.filter(a => a.type === "SELL" || !a.type);
+    await overrideChainStatuses(sellAds, 20);
+
+    // Filter out non-OPEN chain-confirmed SELL ads
+    allAds = allAds.filter(ad => {
+      if (ad.type === "BUY") return true; // BUY ads have no on-chain status yet
+      const s = ad._chainStatus ?? ad.status;
+      return s === 0 || s === "OPEN";
+    });
+
+    renderAds(allAds, statusMap);
   } catch (e) {
-    console.warn("firestore load failed", e);
+    console.error(e);
+    adList.innerHTML = `<div class="p2p-empty">로드 실패: ${e.message}</div>`;
   }
-
-  // 2) 체인 storage fallback
-  try {
-    const chainItems = await loadFromChainByStorage();
-    if (chainItems.length > 0) {
-      renderTrades(chainItems, "Chain(storage: getTrade)", vetConfig);
-      return;
-    }
-  } catch (e) {
-    console.warn("chain load failed", e);
-  }
-
-  renderEmpty("아직 등록된 거래가 없습니다. (Firestore/체인 기준)");
 }
 
-boot();
+async function overrideChainStatuses(ads, max = 20) {
+  if (!ethers || !ABI?.length || !CONFIG?.RPC_URL || !CONFIG?.CONTRACT?.vetEX) return;
+  const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+  const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
+  await Promise.allSettled(ads.slice(0, max).map(async ad => {
+    const id = Number(ad.tradeId);
+    if (!id) return;
+    try { ad._chainStatus = Number((await c.getTrade(id)).status); } catch {}
+  }));
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+document.getElementById("tabBuy")?.addEventListener("click", () => {
+  activeTab = "SELL";
+  document.getElementById("tabBuy")?.classList.add("active");
+  document.getElementById("tabSell")?.classList.remove("active");
+  renderAds(allAds, _lastStatusMap);
+});
+
+document.getElementById("tabSell")?.addEventListener("click", () => {
+  activeTab = "BUY";
+  document.getElementById("tabSell")?.classList.add("active");
+  document.getElementById("tabBuy")?.classList.remove("active");
+  renderAds(allAds, _lastStatusMap);
+});
+
+// ── Filter / sort controls ────────────────────────────────────────────────────
+let _lastStatusMap = {};
+
+document.querySelectorAll(".fiat-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    fiatFilter = btn.dataset.fiat;
+    document.querySelectorAll(".fiat-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderAds(allAds, _lastStatusMap);
+  });
+});
+
+document.getElementById("sortBy")?.addEventListener("change", e => {
+  sortKey = e.target.value;
+  renderAds(allAds, _lastStatusMap);
+});
+
+// ── Real-time refresh (30초마다) ──────────────────────────────────────────────
+async function refresh() {
+  try {
+    const q    = query(collection(db, "ads"), where("status","==","OPEN"), orderBy("createdAt","desc"), limit(100));
+    const snap = await getDocs(q);
+    allAds = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+    const addresses = allAds.map(a => a.seller || a.buyer).filter(Boolean);
+    _lastStatusMap  = await fetchSellerStatus(addresses);
+    const sellAds   = allAds.filter(a => a.type === "SELL" || !a.type);
+    await overrideChainStatuses(sellAds, 20);
+    allAds = allAds.filter(ad => {
+      if (ad.type === "BUY") return true;
+      const s = ad._chainStatus ?? ad.status;
+      return s === 0 || s === "OPEN";
+    });
+    renderAds(allAds, _lastStatusMap);
+  } catch {}
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+await loadAds();
+setInterval(refresh, 30_000);
