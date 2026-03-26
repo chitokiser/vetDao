@@ -317,15 +317,16 @@ function renderActions(ad, chainSt) {
   const timedOut = isTimedOut();
 
   // Hide all first
-  ["btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute"]
+  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute"]
     .forEach(id => { const el = $(id); if (el) el.style.display = "none"; });
 
   const guide = $("actionGuide");
 
   // BUY ad — viewer (potential seller) can accept
   if (ad.type === "BUY" && st < 0 && !isBuyer && me) {
-    show("btnSellerAccept");
-    setGuide("💡 이 구매 광고에 판매자로 응하려면 HEX를 에스크로에 잠급니다.", false);
+    show("sellerAcceptSection");
+    initSellerAcceptForm(ad);
+    setGuide("💡 보유한 HEX 수량을 입력하고 판매 신청하세요. 입력한 만큼만 에스크로에 잠깁니다.", false);
     return;
   }
 
@@ -398,6 +399,69 @@ function setGuide(msg, isErr) {
   el.textContent   = msg || "";
   el.style.borderLeft = isErr ? "3px solid var(--danger)" : "3px solid var(--primary)";
   el.style.color   = isErr ? "var(--danger)" : "";
+}
+
+// ── Seller accept form (BUY ad): 보유 잔액 기준 판매 수량 입력 ─────────────────
+async function initSellerAcceptForm(ad) {
+  const maxAd   = Number(ad.amount || 0);
+  const price   = Number(ad.unitPrice || 0);
+  const minFiat = Number(ad.minFiat || 0);
+  const maxFiat = Number(ad.maxFiat || ad.fiatAmount || maxAd * price);
+  const fiat    = fiatLabel(ad.fiat);
+  const minHex  = price > 0 ? Math.ceil(minFiat / price) : 0;
+
+  const inp   = $("inpSellAmount");
+  const tot   = $("sellerAcceptTotal");
+  const warn  = $("sellerAcceptWarn");
+  const btn   = $("btnSellerAccept");
+  const hint  = $("sellerAcceptLimitHint");
+  const balEl = $("sellerHexBalance");
+
+  // HEX 잔액 조회
+  let walletMax = maxAd;
+  try {
+    const rpc     = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+    const token   = new ethers.Contract(CONFIG.TOKENS.HEX.address, ERC20_ABI, rpc);
+    const me      = activeAccount();
+    const dec     = CONFIG.TOKENS.HEX.decimals ?? 18;
+    const rawBal  = await token.balanceOf(me);
+    const hexBal  = Number(ethers.formatUnits(rawBal, dec));
+    walletMax     = Math.min(hexBal, maxAd);
+    if (balEl) balEl.textContent = hexBal.toLocaleString(undefined, {maximumFractionDigits:4}) + " HEX";
+  } catch {
+    if (balEl) balEl.textContent = "조회 실패";
+  }
+
+  if (hint) hint.textContent = `${minHex.toLocaleString()} ~ ${walletMax.toLocaleString()} HEX 가능`;
+
+  $("sellerAcceptMaxBtn")?.addEventListener("click", () => {
+    if (inp) { inp.value = walletMax; inp.dispatchEvent(new Event("input")); }
+  });
+
+  function recalc() {
+    const qty     = Number(inp?.value || 0);
+    const fiatAmt = Math.floor(qty * price);
+    if (!qty) {
+      if (tot)  tot.textContent    = "-";
+      if (warn) warn.style.display = "none";
+      if (btn)  btn.disabled       = true;
+      return;
+    }
+    if (tot) tot.textContent = fiatAmt.toLocaleString() + " " + fiat;
+
+    let errMsg = "";
+    if (qty > walletMax)    errMsg = `잔액 부족 (최대 ${walletMax.toLocaleString()} HEX)`;
+    else if (qty > maxAd)   errMsg = `광고 수량 초과 (최대 ${maxAd.toLocaleString()} HEX)`;
+    else if (qty < minHex)  errMsg = `최소 ${minHex.toLocaleString()} HEX 이상이어야 합니다.`;
+    else if (minFiat && fiatAmt < minFiat) errMsg = `최소 거래금액 ${minFiat.toLocaleString()} ${fiat} 미만입니다.`;
+    else if (fiatAmt > maxFiat)            errMsg = `최대 거래금액 ${maxFiat.toLocaleString()} ${fiat} 초과입니다.`;
+
+    if (warn) { warn.textContent = errMsg; warn.style.display = errMsg ? "block" : "none"; }
+    if (btn)  btn.disabled = !!errMsg || qty <= 0;
+  }
+
+  if (inp) { inp.addEventListener("input", recalc); recalc(); }
+  if (btn) btn.disabled = true;
 }
 
 // ── Accept form: 수량 입력 + 총액 계산 ────────────────────────────────────────
@@ -758,8 +822,11 @@ async function doSellerAccept() {
   try {
     const tokenCfg = CONFIG.TOKENS?.HEX;
     if (!tokenCfg?.address) throw new Error("CONFIG.TOKENS.HEX 없음");
-    const amount    = adData.amount;
-    const fiatAmt   = adData.fiatAmount || Math.floor(amount * adData.unitPrice);
+
+    // 판매자가 입력한 수량 사용 (없으면 광고 전체 수량)
+    const inputQty = Number($("inpSellAmount")?.value || 0);
+    const amount   = inputQty > 0 ? inputQty : adData.amount;
+    const fiatAmt  = Math.floor(amount * adData.unitPrice);
     const amountWei = ethers.parseUnits(String(amount), tokenCfg.decimals ?? 18);
     const buyerAddr = adData.buyer;
 

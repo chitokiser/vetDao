@@ -216,10 +216,30 @@
               <div id="actionGuide" class="note" style="display:none; margin-bottom:12px; padding:10px 12px; font-size:13px;"></div>
               <div class="action-panel">
 
-                <!-- BUY ad: seller accepts -->
-                <button class="action-btn green" id="btnSellerAccept" style="display:none;">
-                  📤 판매 신청 (에스크로 잠금)
-                </button>
+                <!-- BUY ad: seller 수량 입력 + 판매 신청 -->
+                <div id="sellerAcceptSection" style="display:none;">
+                  <div style="font-size:13px; font-weight:600; margin-bottom:10px;">판매 수량 입력</div>
+                  <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
+                    내 HEX 잔액: <span id="sellerHexBalance" style="color:#f97316; font-weight:600;">조회 중…</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                    <input class="input mono" id="inpSellAmount" type="number" min="0" step="any"
+                           placeholder="HEX 수량" style="flex:1; font-size:14px;" />
+                    <span style="font-size:13px; color:var(--muted); flex-shrink:0;">HEX</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:4px;">
+                    <span id="sellerAcceptLimitHint"></span>
+                    <span id="sellerAcceptMaxBtn" style="color:var(--primary); cursor:pointer;">최대 수량</span>
+                  </div>
+                  <div style="background:rgba(249,115,22,0.08); border:1px solid rgba(249,115,22,0.25); border-radius:10px; padding:12px 14px; margin-bottom:12px;">
+                    <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">구매자 수령 총액</div>
+                    <div id="sellerAcceptTotal" style="font-size:22px; font-weight:700; color:#f97316;">-</div>
+                    <div id="sellerAcceptWarn" style="font-size:12px; color:#ef4444; margin-top:4px; display:none;"></div>
+                  </div>
+                  <button class="action-btn green" id="btnSellerAccept">
+                    📤 판매 신청 (에스크로 잠금)
+                  </button>
+                </div>
 
                 <!-- SELL ad: buyer 수량 입력 + 거래 신청 -->
                 <div id="acceptSection" style="display:none;">
