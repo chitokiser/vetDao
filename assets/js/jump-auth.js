@@ -5,18 +5,10 @@
 (function () {
   'use strict';
 
-  const FIREBASE_CONFIG = {
-    apiKey:            "AIzaSyD6oGXWcQIAa46ZiO6E9fBWOXqiNCAL4-c",
-    authDomain:        "jumper-b15aa.firebaseapp.com",
-    projectId:         "jumper-b15aa",
-    storageBucket:     "jumper-b15aa.firebasestorage.app",
-    messagingSenderId: "1051842479371",
-    appId:             "1:1051842479371:web:cd0dca2c1eab0e44b58e0e",
-    measurementId:     "G-0EGPWQ3JP0",
-  };
-
-  const JUMP_API     = 'https://us-central1-jumper-b15aa.cloudfunctions.net/externalApi';
-  const JUMP_API_KEY = '3fd9afc326ff3f687197f3fbc8f746133d513e5f3237a54a94cd87a3dd3b56cf';
+  if (!window.SECRETS?.jump) throw new Error("secrets.js 가 로드되지 않았습니다. assets/js/secrets.example.js 를 참고하세요.");
+  const FIREBASE_CONFIG = window.SECRETS.jump.firebase;
+  const JUMP_API        = window.SECRETS.jump.apiUrl;
+  const JUMP_API_KEY    = window.SECRETS.jump.apiKey;
 
   // ── Firebase 초기화 (중복 방지) ────────────────────────────────────────
   let _initialized = false;

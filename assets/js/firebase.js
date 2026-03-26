@@ -4,14 +4,8 @@ import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.0/firebase
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-storage.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyD5RSdkYT4ibBxkz2gBXu0z_F-C_NgGRps",
-  authDomain: "pawtube-42f90.firebaseapp.com",
-  projectId: "pawtube-42f90",
-  storageBucket: "pawtube-42f90.firebasestorage.app",
-  messagingSenderId: "1041412280991",
-  appId: "1:1041412280991:web:8dd0c41d7f98828bebc8aa",
-};
+if (!window.SECRETS?.firebase) throw new Error("secrets.js 가 로드되지 않았습니다. assets/js/secrets.example.js 를 참고하세요.");
+const firebaseConfig = window.SECRETS.firebase;
 
 const app = initializeApp(firebaseConfig);
 
