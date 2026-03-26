@@ -317,7 +317,7 @@ function renderActions(ad, chainSt) {
   const timedOut = isTimedOut();
 
   // Hide all first
-  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute","editBuyAdSection"]
+  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute","editBuyAdSection","btnCleanupGhost"]
     .forEach(id => { const el = $(id); if (el) el.style.display = "none"; });
 
   const guide = $("actionGuide");
@@ -340,8 +340,16 @@ function renderActions(ad, chainSt) {
 
   // SELL ad — OPEN: seller can cancel/reclaim
   if ((ad.type !== "BUY") && st === 0 && isSeller) {
-    show("btnCancelOpen");
-    setGuide("📢 모집 중입니다. 광고를 취소하면 에스크로된 HEX가 반환됩니다.", false);
+    // Ghost trade: Firestore에는 있지만 on-chain에 없는 경우 (openTrade 미실행)
+    const onChainSeller = (chainData?.seller ?? chainData?.[0] ?? "").toLowerCase();
+    const isGhost = !onChainSeller || onChainSeller === "0x0000000000000000000000000000000000000000";
+    if (isGhost) {
+      show("btnCleanupGhost");
+      setGuide("⚠ 이 광고는 블록체인에 등록되지 않았습니다. HEX는 잠기지 않았으니 아래 버튼으로 광고를 삭제하세요.", true);
+    } else {
+      show("btnCancelOpen");
+      setGuide("📢 모집 중입니다. 광고를 취소하면 에스크로된 HEX가 반환됩니다.", false);
+    }
     return;
   }
 
@@ -993,6 +1001,22 @@ async function doCancel() {
   }
 }
 
+// Ghost trade: Firestore만 삭제 (on-chain 미등록 광고)
+async function doCleanupGhost() {
+  if (!confirm("블록체인에 등록되지 않은 광고를 삭제하시겠습니까?\nHEX는 잠기지 않았으므로 안전하게 삭제됩니다.")) return;
+  const adDocId = tradeIdParam || adIdParam;
+  if (!adDocId) return setNote("광고 ID를 찾을 수 없습니다.", true);
+  try {
+    await updateDoc(doc(db, "ads", String(adDocId)), {
+      status: "CANCELED", cancelReason: "ghost_no_onchain", updatedAt: serverTimestamp(),
+    });
+    setNote("광고가 삭제되었습니다. 광고등록 페이지에서 다시 등록해주세요.");
+    setTimeout(() => { location.href = "/sell.html"; }, 2000);
+  } catch (e) {
+    setNote(e?.message || String(e), true);
+  }
+}
+
 // BUY ad: 수정 폼 초기화
 function initEditBuyAdForm(ad) {
   const priceEl   = $("editUnitPrice");
@@ -1155,6 +1179,7 @@ $("btnRelease")?.addEventListener("click",      doRelease);
 $("btnCancelOpen")?.addEventListener("click",   doCancelOpen);
 $("btnCancel")?.addEventListener("click",         doCancel);
 $("btnCancelByBuyer")?.addEventListener("click", doCancelByBuyer);
+$("btnCleanupGhost")?.addEventListener("click",  doCleanupGhost);
 $("btnEditBuyAd")?.addEventListener("click",    doEditBuyAd);
 $("btnCancelBuyAd")?.addEventListener("click",  doCancelBuyAd);
 $("btnDispute")?.addEventListener("click",        doDispute);

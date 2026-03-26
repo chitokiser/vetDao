@@ -26,6 +26,20 @@
     "function hexBank() external view returns (address)",
     "function FEE_FLUSH_THRESHOLD() external view returns (uint256)",
 
+    // ----- Errors -----
+    "error BadStatus()",
+    "error NoTrade()",
+    "error NotSeller()",
+    "error NotBuyer()",
+    "error NotParty()",
+    "error TooEarly()",
+    "error AmountZero()",
+    "error FeeTooHigh()",
+    "error ParamTooSmall()",
+    "error NotArbitrator()",
+    "error NothingToFlush()",
+    "error HexBankNotSet()",
+
     // ----- Events -----
     "event TradeOpened(uint256 indexed tradeId,address indexed seller,uint256 amount,uint8 fiat)",
     "event TradeTaken(uint256 indexed tradeId,address indexed buyer,uint256 buyAmount)",
