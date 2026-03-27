@@ -187,7 +187,7 @@
 
             <!-- SNS contact -->
             <div class="panel" style="padding:16px;" id="snsPanel">
-              <div style="font-size:13px; font-weight:600; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.05em;">판매자 연락처</div>
+              <div id="snsPanelLabel" style="font-size:13px; font-weight:600; color:var(--muted); margin-bottom:10px; text-transform:uppercase; letter-spacing:.05em;">판매자 연락처</div>
               <div id="vSellerSns" style="font-size:14px; line-height:1.7;">-</div>
             </div>
 
@@ -218,26 +218,116 @@
 
                 <!-- BUY ad: seller 수량 입력 + 판매 신청 -->
                 <div id="sellerAcceptSection" style="display:none;">
-                  <div style="font-size:13px; font-weight:600; margin-bottom:10px;">판매 수량 입력</div>
-                  <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">
-                    내 HEX 잔액: <span id="sellerHexBalance" style="color:#f97316; font-weight:600;">조회 중…</span>
+                  <div style="font-size:13px; font-weight:600; margin-bottom:8px;">판매 수량 입력</div>
+
+                  <!-- 판매 가능 범위 안내 박스 -->
+                  <div id="sellRangeBox" style="
+                    display:none; margin-bottom:10px;
+                    background:rgba(255,255,255,0.04); border:1px solid var(--line);
+                    border-radius:10px; padding:10px 12px;
+                  ">
+                    <div style="font-size:11px; color:var(--muted); margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:.04em;">판매 가능 범위</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                      <div style="background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.2); border-radius:8px; padding:8px 10px;">
+                        <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">최소 판매 수량</div>
+                        <div style="font-size:15px; font-weight:700; color:#f87171;" id="sellMinDisplay">-</div>
+                        <div style="font-size:11px; color:var(--muted); margin-top:1px;" id="sellMinFiat">-</div>
+                      </div>
+                      <div style="background:rgba(34,197,94,0.07); border:1px solid rgba(34,197,94,0.2); border-radius:8px; padding:8px 10px;">
+                        <div style="font-size:11px; color:var(--muted); margin-bottom:2px;">최대 판매 수량</div>
+                        <div style="font-size:15px; font-weight:700; color:#4ade80;" id="sellMaxDisplay">-</div>
+                        <div style="font-size:11px; color:var(--muted); margin-top:1px;" id="sellMaxFiat">-</div>
+                      </div>
+                    </div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:6px;">
+                      내 HEX 잔액: <span id="sellerHexBalance" style="color:#f97316; font-weight:600;">조회 중…</span>
+                    </div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+
+                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                     <input class="input mono" id="inpSellAmount" type="number" min="0" step="any"
-                           placeholder="HEX 수량" style="flex:1; font-size:14px;" />
+                           placeholder="HEX 수량 입력" style="flex:1; font-size:14px;" />
                     <span style="font-size:13px; color:var(--muted); flex-shrink:0;">HEX</span>
+                    <button type="button" id="sellerAcceptMaxBtn"
+                            style="flex-shrink:0; padding:0 10px; height:36px; font-size:12px;
+                                   background:rgba(249,115,22,0.15); color:#f97316;
+                                   border:1px solid rgba(249,115,22,0.3); border-radius:8px; cursor:pointer;">
+                      최대
+                    </button>
                   </div>
-                  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:4px;">
-                    <span id="sellerAcceptLimitHint"></span>
-                    <span id="sellerAcceptMaxBtn" style="color:var(--primary); cursor:pointer;">최대 수량</span>
-                  </div>
+                  <div id="sellerAcceptLimitHint" style="display:none;"></div>
                   <div style="background:rgba(249,115,22,0.08); border:1px solid rgba(249,115,22,0.25); border-radius:10px; padding:12px 14px; margin-bottom:12px;">
                     <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">구매자 수령 총액</div>
                     <div id="sellerAcceptTotal" style="font-size:22px; font-weight:700; color:#f97316;">-</div>
                     <div id="sellerAcceptWarn" style="font-size:12px; color:#ef4444; margin-top:4px; display:none;"></div>
                   </div>
+                  <!-- 판매자 입금받을 계좌 -->
+                  <div style="border-top:1px solid var(--line); padding-top:12px; margin-bottom:12px;">
+
+                    <!-- 통화별 필수 안내 배너 (JS에서 fiat에 따라 표시) -->
+                    <div id="bankRequireNotice" style="display:none;
+                      padding:12px 14px; border-radius:10px; margin-bottom:10px;
+                      font-size:13px; line-height:1.6;">
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                      <div style="font-size:13px; font-weight:600;">📬 입금받을 계좌 <span style="color:#ef4444;">*</span></div>
+                      <a id="goToPaymentMethods" href="/payment-methods.html" target="_blank"
+                         style="font-size:12px; color:var(--primary); text-decoration:none;">+ 계좌 관리 →</a>
+                    </div>
+
+                    <!-- 저장된 계좌 목록 (동적 생성) -->
+                    <div id="savedBankList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+                      <div style="font-size:12px; color:var(--muted); text-align:center; padding:8px 0;">계좌 불러오는 중…</div>
+                    </div>
+
+                    <!-- 새로 입력 토글 -->
+                    <div id="newBankToggleRow" style="margin-bottom:6px;">
+                      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--muted);">
+                        <input type="radio" name="bankChoice" value="new" id="radioNewBank" style="accent-color:#f97316;" />
+                        직접 입력 (새 계좌)
+                      </label>
+                    </div>
+
+                    <!-- 새로 입력 폼 (처음엔 숨김) -->
+                    <div id="newBankForm" style="display:none; margin-top:8px;">
+                      <input class="input" id="sellerBankName" placeholder="은행명 (예: Vietcombank, Techcombank)" style="margin-bottom:6px; font-size:13px; width:100%;" />
+                      <input class="input" id="sellerAccountName" placeholder="예금주 이름" style="margin-bottom:6px; font-size:13px; width:100%;" />
+                      <input class="input mono" id="sellerAccountNumber" placeholder="계좌번호" style="margin-bottom:6px; font-size:13px; width:100%;" />
+                      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer;">
+                        <input type="checkbox" id="saveNewBank" checked style="accent-color:#f97316;" />
+                        이 계좌를 저장해 다음에도 사용
+                      </label>
+                    </div>
+                  </div>
                   <button class="action-btn green" id="btnSellerAccept">
                     📤 판매 신청 (에스크로 잠금)
+                  </button>
+                </div>
+
+                <!-- BUY ad: 구매자 거래 수락 (seller가 escrow 완료, buyer가 acceptTrade 호출) -->
+                <div id="buyerConfirmSection" style="display:none;">
+                  <div style="font-size:14px; font-weight:700; margin-bottom:10px; color:#22c55e;">✅ 판매자가 HEX를 에스크로했습니다!</div>
+
+                  <!-- 에스크로 수량 + 입금 금액 -->
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+                    <div style="background:rgba(249,115,22,0.08); border:1px solid rgba(249,115,22,0.25); border-radius:10px; padding:12px 14px; text-align:center;">
+                      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">에스크로된 HEX</div>
+                      <div id="buyerEscrowHex" style="font-size:20px; font-weight:700; color:#f97316;">-</div>
+                      <div style="font-size:11px; color:var(--muted); margin-top:2px;">HEX</div>
+                    </div>
+                    <div style="background:rgba(34,197,94,0.08); border:1px solid rgba(34,197,94,0.25); border-radius:10px; padding:12px 14px; text-align:center;">
+                      <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">내가 입금할 금액</div>
+                      <div id="buyerPayFiat" style="font-size:20px; font-weight:700; color:#22c55e;">-</div>
+                      <div id="buyerPayFiatUnit" style="font-size:11px; color:var(--muted); margin-top:2px;">-</div>
+                    </div>
+                  </div>
+
+                  <!-- 판매자 계좌 -->
+                  <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">📋 판매자 계좌 (입금처)</div>
+                  <div id="sellerBankDisplay" style="background:rgba(34,197,94,0.06); border:1px solid rgba(34,197,94,0.25); border-radius:10px; padding:12px 14px; margin-bottom:12px; font-size:13px; line-height:1.8;"></div>
+                  <button class="action-btn primary" id="btnBuyerConfirm">
+                    🤝 거래 수락 · 입금 진행
                   </button>
                 </div>
 
@@ -344,6 +434,65 @@
       </div>
     </main>
     <div id="site-footer"></div>
+  </div>
+
+  <!-- ── 부분 체결 완료 모달 ── -->
+  <div id="partialModal" style="
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
+    align-items:center; justify-content:center;
+  ">
+    <div style="
+      background:var(--panel); border:1px solid var(--line); border-radius:20px;
+      padding:36px 32px; max-width:400px; width:92%; text-align:center;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    ">
+      <div style="font-size:48px; margin-bottom:14px;">🎉</div>
+      <div style="font-size:20px; font-weight:700; margin-bottom:8px;" id="partialModalTitle">
+        거래 완료!
+      </div>
+      <div style="font-size:14px; color:var(--muted); margin-bottom:6px;" id="partialModalFilled"></div>
+      <div style="
+        background:rgba(249,115,22,0.1); border:1px solid rgba(249,115,22,0.3);
+        border-radius:12px; padding:14px; margin:16px 0;
+      ">
+        <div style="font-size:13px; color:var(--muted); margin-bottom:4px;">잔여 수량</div>
+        <div style="font-size:28px; font-weight:700; color:#f97316;" id="partialModalRemaining">-</div>
+      </div>
+      <div style="font-size:14px; color:var(--muted); margin-bottom:24px;" id="partialModalQuestion"></div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button id="partialModalContinue" class="action-btn primary">
+          계속 거래 진행
+        </button>
+        <button id="partialModalClose" class="action-btn danger">
+          광고 종료
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 취소 완료 모달 ── -->
+  <div id="cancelModal" style="
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,0.75); backdrop-filter:blur(4px);
+    align-items:center; justify-content:center;
+  ">
+    <div style="
+      background:var(--panel); border:1px solid var(--line); border-radius:20px;
+      padding:36px 32px; max-width:360px; width:90%; text-align:center;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    ">
+      <div style="font-size:56px; margin-bottom:16px;">✅</div>
+      <div style="font-size:20px; font-weight:700; margin-bottom:8px;" id="cancelModalTitle">
+        광고가 취소되었습니다
+      </div>
+      <div style="font-size:14px; color:var(--muted); margin-bottom:28px; line-height:1.6;" id="cancelModalDesc">
+        취소가 완료되었습니다.
+      </div>
+      <button id="cancelModalBtn" class="action-btn primary" style="max-width:200px; margin:0 auto;">
+        확인
+      </button>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.14.0/dist/ethers.umd.min.js"></script>

@@ -19,7 +19,7 @@
 
     // ----- Read -----
     "function nextTradeId() external view returns (uint256)",
-    "function getTrade(uint256 tradeId) external view returns (tuple(address seller,address buyer,uint256 amount,uint256 buyAmount,uint256 fiatAmount,bytes32 paymentRef,uint64 createdAt,uint64 takenAt,uint64 paidAt,uint8 fiat,uint8 status))",
+    "function getTrade(uint256 tradeId) external view returns (tuple(address seller,address buyer,uint256 amount,uint256 buyAmount,uint256 fiatAmount,bytes32 paymentRef,uint64 createdAt,uint64 takenAt,uint64 paidAt,uint64 timeoutSeconds,uint8 fiat,uint8 status))",
     "function feeBps() external view returns (uint16)",
     "function pendingHexFee() external view returns (uint256)",
     "function totalHexFeeCollected() external view returns (uint256)",

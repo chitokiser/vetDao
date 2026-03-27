@@ -269,6 +269,7 @@ async function onJumpConnected(wallet) {
   if (navAdminMobile) navAdminMobile.style.display = isAdmin ? '' : 'none';
 
   window.dispatchEvent(new CustomEvent('jump:connected', { detail: wallet }));
+  notifyWalletConnected(wallet.address, 'jump');
 }
 
 let _jumpConnecting = false;
@@ -325,6 +326,16 @@ async function connectJump() {
 
 // ── MetaMask 연결 ─────────────────────────────────────────────────────────
 
+// ── 통합 연결 알림 ───────────────────────────────────────────────────────────
+// 지갑이 연결/복원될 때 항상 이 함수를 통해 알림 → 모든 페이지가 wallet:connected 이벤트로 수신
+function notifyWalletConnected(addr, type) {
+  if (!addr) return;
+  window.__hdrWallet._address = addr.toLowerCase();
+  window.dispatchEvent(new CustomEvent('wallet:connected', {
+    detail: { address: addr, type: type || 'metamask' }
+  }));
+}
+
 async function connectWallet() {
   if (window.jumpWallet) {
     note(`구글 수탁지갑(${shortAddr(window.jumpWallet.address)})이 활성 상태입니다. 먼저 구글 로그아웃 후 MetaMask를 연결하세요.`, "bad");
@@ -352,10 +363,31 @@ async function connectWallet() {
 
     await loadWalletBalances();
     startHeartbeat(userAddress);
+    notifyWalletConnected(userAddress, 'metamask');
   } catch (e) {
     console.error("[wallet] connect error:", e);
     note(e?.message || "지갑 연결 실패", "bad");
     alert(e?.message || "지갑 연결 실패");
+  }
+}
+
+// ── MetaMask 세션 자동 복원 ──────────────────────────────────────────────────
+// 이전 페이지에서 MetaMask를 연결했다면 eth_accounts(팝업 없음)로 주소 복원
+async function tryAutoRestoreMetaMask() {
+  if (window.jumpWallet) return; // Jump 우선
+  if (!window.ethereum || !ethers) return;
+  try {
+    const accs = await window.ethereum.request({ method: 'eth_accounts' });
+    if (!accs?.length) return;
+    provider    = new ethers.BrowserProvider(window.ethereum);
+    userAddress = accs[0];
+    setConnectLabel(true);
+    setAddr(userAddress);
+    await loadWalletBalances();
+    startHeartbeat(userAddress);
+    notifyWalletConnected(userAddress, 'metamask');
+  } catch (e) {
+    console.warn('[wallet] MetaMask 복원 실패:', e);
   }
 }
 
@@ -479,10 +511,21 @@ async function tryAutoRestoreJump() {
 // 부팅
 startWatcher();
 
-// Jump 세션 복원 (이전 Google 로그인 유지)
-tryAutoRestoreJump();
-
+// __hdrWallet 먼저 선언 (페이지 스크립트가 참조할 수 있도록)
 window.__hdrWallet = {
+  _address: null,
+  get address() {
+    return this._address || window.jumpWallet?.address?.toLowerCase() || null;
+  },
   connect: connectWallet,
   reload:  () => loadWalletBalances(),
 };
+
+// Jump 세션 복원 (이전 Google 로그인 유지)
+tryAutoRestoreJump();
+
+// MetaMask 세션 복원 (Jump 복원 완료 후 실행)
+// Jump가 복원되면 notifyWalletConnected를 먼저 호출하므로 MetaMask는 스킵됨
+setTimeout(() => {
+  if (!window.__hdrWallet.address) tryAutoRestoreMetaMask();
+}, 200);

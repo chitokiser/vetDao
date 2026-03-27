@@ -1,7 +1,7 @@
 // /assets/js/pages/trade.js
 import {
   doc, getDoc, setDoc, addDoc, updateDoc,
-  collection, query, orderBy, onSnapshot,
+  collection, query, orderBy, where, getDocs, onSnapshot,
   serverTimestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
@@ -46,6 +46,67 @@ function setNote(msg, isErr = false) {
   el.innerHTML = msg || "";
   el.style.borderLeft = isErr ? "3px solid var(--danger)" : "3px solid var(--primary)";
   el.style.color = isErr ? "var(--danger)" : "";
+}
+// 부분 체결 후 계속/종료 모달
+// filledHex: 이번 거래에서 체결된 수량, remainingHex: 남은 수량, isBuyAd: BUY 광고 여부
+function showPartialModal(filledHex, remainingHex, isBuyAd, onContinue, onClose) {
+  const modal = $("partialModal");
+  if (!modal) { onClose?.(); return; }
+
+  const fiatLabel_ = fiatLabel(adData?.fiat);
+  const price      = Number(adData?.unitPrice || 0);
+  const remainFiat = price > 0 ? (remainingHex * price).toLocaleString() + " " + fiatLabel_ : "";
+
+  $("partialModalTitle").textContent    = "거래 완료! 🎉";
+  $("partialModalFilled").textContent   = `이번 체결: ${fmtNum(filledHex)} HEX`;
+  $("partialModalRemaining").textContent = fmtNum(remainingHex) + " HEX" + (remainFiat ? " ≈ " + remainFiat : "");
+  $("partialModalQuestion").textContent = isBuyAd
+    ? "아직 구매 목표 수량이 남았습니다. 광고를 유지하고 계속 구매하시겠습니까?"
+    : "에스크로된 HEX 중 잔여분이 지갑으로 반환됩니다. 나머지 수량으로 판매를 계속하시겠습니까?";
+
+  modal.style.display = "flex";
+
+  const btnContinue = $("partialModalContinue");
+  const btnClose    = $("partialModalClose");
+
+  const cleanup = () => { modal.style.display = "none"; };
+  const handleContinue = () => { cleanup(); btnContinue.removeEventListener("click", handleContinue); btnClose.removeEventListener("click", handleClose_); onContinue?.(); };
+  const handleClose_   = () => { cleanup(); btnContinue.removeEventListener("click", handleContinue); btnClose.removeEventListener("click", handleClose_); onClose?.(); };
+
+  btnContinue.addEventListener("click", handleContinue);
+  btnClose.addEventListener("click",    handleClose_);
+}
+
+// 재등록 URL 생성 (같은 광고 조건으로 sell.html 프리필)
+function buildReregisterUrl(ad) {
+  if (!ad) return "/sell.html";
+  const p = new URLSearchParams();
+  p.set("preset", "1");
+  p.set("type",       ad.type || "SELL");
+  p.set("fiat",       ad.fiat ?? "KRW");
+  p.set("unitPrice",  ad.unitPrice ?? "");
+  // 수량은 원본(originalAmount) 기준으로 재등록
+  p.set("amount",     ad.originalAmount || ad.amount || "");
+  if (ad.minFiat)    p.set("minFiat",    ad.minFiat);
+  if (ad.maxFiat)    p.set("maxFiat",    ad.maxFiat);
+  if (ad.terms)      p.set("terms",      ad.terms);
+  if (ad.timeoutMin) p.set("timeoutMin", ad.timeoutMin);
+  return "/sell.html?" + p.toString();
+}
+
+function showCancelModal(title, desc, onConfirm) {
+  const modal = $("cancelModal");
+  if (!modal) { if (onConfirm) onConfirm(); return; }
+  $("cancelModalTitle").textContent = title || "취소 완료";
+  $("cancelModalDesc").innerHTML    = desc  || "";
+  modal.style.display = "flex";
+  const btn = $("cancelModalBtn");
+  const handler = () => {
+    modal.style.display = "none";
+    btn.removeEventListener("click", handler);
+    if (onConfirm) onConfirm();
+  };
+  btn.addEventListener("click", handler);
 }
 function fmtNum(n) { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString() : "-"; }
 function shortAddr(a) { return a ? a.slice(0,6) + "…" + a.slice(-4) : "-"; }
@@ -248,6 +309,23 @@ const TYPE_LABEL = {
 function renderPaymentMethods(ad) {
   const list = $("pmList");
   if (!list) return;
+
+  // BUY ad: seller's bank account (where buyer sends VND)
+  if (ad.type === "BUY" && ad.sellerBank) {
+    const sb = ad.sellerBank;
+    if (sb.bankName || sb.accountNumber) {
+      list.innerHTML = `<div class="pm-card">
+        <div class="pm-type">🏦 판매자 계좌 (VND 입금처)</div>
+        <div class="pm-detail">
+          ${sb.bankName      ? `<div><span style="color:var(--muted);">은행:</span> <strong>${sb.bankName}</strong></div>` : ""}
+          ${sb.accountName   ? `<div><span style="color:var(--muted);">예금주:</span> <strong>${sb.accountName}</strong></div>` : ""}
+          ${sb.accountNumber ? `<div><span style="color:var(--muted);">계좌:</span> <strong class="mono">${sb.accountNumber}</strong></div>` : ""}
+        </div>
+      </div>`;
+      return;
+    }
+  }
+
   const pms = ad.paymentMethods || [];
   if (!pms.length) {
     list.innerHTML = `<div class="muted" style="font-size:13px;">결제수단 정보 없음</div>`;
@@ -275,9 +353,17 @@ async function updateTradeStats(addr, isSuccess) {
 }
 
 // ── Render seller SNS + stats ──────────────────────────────────────────────────
-async function loadSellerSns(sellerAddr) {
-  const el = $("vSellerSns");
+// isBuyAd: BUY 광고일 때 true → 광고등록자 = 구매자 레이블로 표시
+async function loadSellerSns(sellerAddr, isBuyAd = false) {
+  const el        = $("vSellerSns");
+  const labelEl   = $("snsPanelLabel");
   if (!el || !sellerAddr) return;
+
+  // 패널 레이블 동적 변경
+  if (labelEl) {
+    labelEl.textContent = isBuyAd ? "광고등록자 연락처" : "판매자 연락처";
+  }
+
   try {
     const snap = await getDoc(doc(db, "users", sellerAddr.toLowerCase()));
     if (snap.exists()) {
@@ -292,6 +378,8 @@ async function loadSellerSns(sellerAddr) {
         &nbsp;·&nbsp; 성공률: <strong style="color:#22c55e;">${rate !== null ? rate + "%" : "-"}</strong>
       </div>`;
       el.innerHTML = stats + ((kk + tg) || "<span class='muted'>등록된 연락처 없음</span>");
+    } else {
+      el.innerHTML = "<span class='muted'>등록된 연락처 없음</span>";
     }
   } catch {}
 }
@@ -317,7 +405,7 @@ function renderActions(ad, chainSt) {
   const timedOut = isTimedOut();
 
   // Hide all first
-  ["sellerAcceptSection","btnSellerAccept","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute","editBuyAdSection","btnCleanupGhost"]
+  ["sellerAcceptSection","buyerConfirmSection","acceptSection","paidSection","btnRelease","btnCancel","btnCancelOpen","btnCancelByBuyer","btnDispute","editBuyAdSection","btnCleanupGhost"]
     .forEach(id => { const el = $(id); if (el) el.style.display = "none"; });
 
   const guide = $("actionGuide");
@@ -335,6 +423,34 @@ function renderActions(ad, chainSt) {
     show("sellerAcceptSection");
     initSellerAcceptForm(ad);
     setGuide("💡 보유한 HEX 수량을 입력하고 판매 신청하세요. 입력한 만큼만 에스크로에 잠깁니다.", false);
+    return;
+  }
+
+  // BUY ad — OPEN: designated buyer confirms (seller already escrowed)
+  if (ad.type === "BUY" && st === 0 && isBuyer) {
+    show("buyerConfirmSection");
+
+    // 에스크로된 HEX 수량 + 입금 금액 표시
+    const escrowedHex = Number(ad.takenAmount || ad.amount || 0);
+    const unitPrice   = Number(ad.unitPrice || 0);
+    const fiatAmt     = ad.takenFiat || (escrowedHex > 0 && unitPrice > 0 ? Math.floor(escrowedHex * unitPrice) : 0);
+    const fiatUnit    = fiatLabel(ad.fiat);
+    const hexEl  = $("buyerEscrowHex");
+    const fiatEl = $("buyerPayFiat");
+    const unitEl = $("buyerPayFiatUnit");
+    if (hexEl)  hexEl.textContent  = escrowedHex > 0 ? escrowedHex.toLocaleString() : "-";
+    if (fiatEl) fiatEl.textContent = fiatAmt > 0 ? fiatAmt.toLocaleString() : "-";
+    if (unitEl) unitEl.textContent = fiatUnit;
+
+    const sb = ad.sellerBank || {};
+    const bankHtml = sb.bankName || sb.accountNumber
+      ? `<div><span style="color:var(--muted);">은행:</span> <strong>${sb.bankName || "-"}</strong></div>
+         <div><span style="color:var(--muted);">예금주:</span> <strong>${sb.accountName || "-"}</strong></div>
+         <div><span style="color:var(--muted);">계좌번호:</span> <strong class="mono">${sb.accountNumber || "-"}</strong></div>`
+      : `<div style="color:var(--muted);">판매자 계좌 정보 미등록</div>`;
+    const el = $("sellerBankDisplay");
+    if (el) el.innerHTML = bankHtml;
+    setGuide(`✅ 판매자가 ${escrowedHex > 0 ? escrowedHex.toLocaleString() + " HEX를" : "HEX를"} 에스크로했습니다. 아래 계좌로 ${fiatAmt > 0 ? fiatAmt.toLocaleString() + " " + fiatUnit + "을" : "금액을"} 입금 후 거래를 수락하세요.`, false);
     return;
   }
 
@@ -426,6 +542,37 @@ async function initSellerAcceptForm(ad) {
   const fiat    = fiatLabel(ad.fiat);
   const minHex  = price > 0 ? Math.ceil(minFiat / price) : 0;
 
+  // ── 통화별 필수 안내 배너 ────────────────────────────────────────────────────
+  const notice = $("bankRequireNotice");
+  if (notice) {
+    const fiatStr = (ad.fiat ?? "").toString();
+    const isVND = fiatStr === "1" || fiatStr === "VND";
+    const isKRW = fiatStr === "0" || fiatStr === "KRW";
+    if (isVND) {
+      notice.style.display = "block";
+      notice.style.background = "rgba(239,68,68,0.08)";
+      notice.style.border = "1px solid rgba(239,68,68,0.35)";
+      notice.style.color = "#fca5a5";
+      notice.innerHTML = `
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">🇻🇳 베트남 VND 결제 광고입니다</div>
+        구매자는 <strong>베트남 동(VND)</strong>으로 입금합니다.<br>
+        반드시 <strong>베트남 은행 계좌</strong>(예: Vietcombank, Techcombank, MB Bank 등)를 입력하세요.<br>
+        <span style="color:#ef4444; font-weight:600;">잘못된 계좌(한국 계좌 등) 입력 시 분쟁의 원인이 됩니다.</span>`;
+    } else if (isKRW) {
+      notice.style.display = "block";
+      notice.style.background = "rgba(59,130,246,0.08)";
+      notice.style.border = "1px solid rgba(59,130,246,0.3)";
+      notice.style.color = "#93c5fd";
+      notice.innerHTML = `
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">🇰🇷 한국 KRW 결제 광고입니다</div>
+        구매자는 <strong>원화(KRW)</strong>로 입금합니다.<br>
+        반드시 <strong>한국 은행 계좌</strong>를 입력하세요.<br>
+        <span style="color:#ef4444; font-weight:600;">잘못된 계좌 입력 시 분쟁의 원인이 됩니다.</span>`;
+    } else {
+      notice.style.display = "none";
+    }
+  }
+
   const inp   = $("inpSellAmount");
   const tot   = $("sellerAcceptTotal");
   const warn  = $("sellerAcceptWarn");
@@ -449,6 +596,22 @@ async function initSellerAcceptForm(ad) {
   }
 
   if (hint) hint.textContent = `${minHex.toLocaleString()} ~ ${walletMax.toLocaleString()} HEX 가능`;
+
+  // ── 판매 가능 범위 박스 ────────────────────────────────────────────────────
+  const rangeBox = $("sellRangeBox");
+  if (rangeBox) {
+    const minFiatCalc = minHex > 0 ? Math.floor(minHex * price) : minFiat;
+    const maxFiatCalc = Math.floor(walletMax * price);
+    const minD = $("sellMinDisplay");
+    const minF = $("sellMinFiat");
+    const maxD = $("sellMaxDisplay");
+    const maxF = $("sellMaxFiat");
+    if (minD) minD.textContent = minHex > 0 ? `${minHex.toLocaleString()} HEX` : `제한 없음`;
+    if (minF) minF.textContent = minHex > 0 ? `≈ ${minFiatCalc.toLocaleString()} ${fiat}` : "";
+    if (maxD) maxD.textContent = `${walletMax.toLocaleString()} HEX`;
+    if (maxF) maxF.textContent = `≈ ${maxFiatCalc.toLocaleString()} ${fiat}`;
+    rangeBox.style.display = "block";
+  }
 
   $("sellerAcceptMaxBtn")?.addEventListener("click", () => {
     if (inp) { inp.value = walletMax; inp.dispatchEvent(new Event("input")); }
@@ -477,8 +640,125 @@ async function initSellerAcceptForm(ad) {
   }
 
   if (inp) { inp.addEventListener("input", recalc); recalc(); }
-  if (btn) btn.disabled = true;
+  // recalc()가 버튼 활성/비활성을 이미 처리하므로 여기서 추가로 비활성화하지 않음
+
+  // ── 저장된 계좌 불러오기 ────────────────────────────────────────────────────
+  loadSavedBanks(ad);
 }
+
+// 저장된 결제수단 로드 및 선택 UI 렌더링
+async function loadSavedBanks(ad) {
+  const list = $("savedBankList");
+  if (!list) return;
+  const me = activeAccount();
+  if (!me) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--muted);">지갑 연결 후 저장된 계좌를 불러올 수 있습니다.</div>`;
+    showNewBankForm(true);
+    return;
+  }
+
+  try {
+    const fiat = (ad?.fiat || "").toString();
+    const pmType = (fiat === "1" || fiat === "VND") ? "BANK_VN" : "BANK_KR";
+    const q = query(collection(db, "payment_methods"), where("user", "==", me.toLowerCase()));
+    const snap = await getDocs(q);
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // fiat 통화에 맞는 계좌 우선, 전체도 표시
+    const matched = all.filter(p => p.type === pmType);
+    const others  = all.filter(p => p.type !== pmType);
+    const sorted  = [...matched, ...others];
+
+    if (!sorted.length) {
+      list.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:4px 0;">저장된 계좌 없음 — 아래에서 새로 입력하세요.</div>`;
+      showNewBankForm(true);
+      // 라디오 "새로 입력" 자동 선택
+      const r = $("radioNewBank"); if (r) r.checked = true;
+      return;
+    }
+
+    // 저장된 계좌 라디오 카드 렌더링
+    const fiatStr = (ad?.fiat ?? "").toString();
+    const requiredType = (fiatStr === "1" || fiatStr === "VND") ? "BANK_VN"
+                       : (fiatStr === "0" || fiatStr === "KRW") ? "BANK_KR" : null;
+
+    list.innerHTML = sorted.map((pm, i) => {
+      const typeLabel = pm.type === "BANK_VN" ? "🇻🇳 베트남 계좌" : pm.type === "BANK_KR" ? "🇰🇷 한국 계좌" : pm.type;
+      const isMismatch = requiredType && pm.type !== requiredType;
+      const mismatchMsg = isMismatch
+        ? (requiredType === "BANK_VN"
+            ? `<div style="font-size:11px;color:#ef4444;margin-top:3px;">⚠ VND 광고에는 베트남 계좌를 사용하세요</div>`
+            : `<div style="font-size:11px;color:#ef4444;margin-top:3px;">⚠ KRW 광고에는 한국 계좌를 사용하세요</div>`)
+        : "";
+      const borderColor = isMismatch ? "rgba(239,68,68,0.35)" : (i === 0 ? "#f97316" : "var(--line)");
+      return `
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;
+                    padding:10px 12px;border-radius:10px;border:1px solid ${borderColor};
+                    background:${isMismatch ? "rgba(239,68,68,0.04)" : "rgba(255,255,255,0.04)"};transition:.15s;"
+             id="bankCard_${pm.id}">
+        <input type="radio" name="bankChoice" value="${pm.id}"
+               style="accent-color:#f97316;margin-top:3px;flex-shrink:0;"
+               onchange="onBankChoiceChange('${pm.id}')" ${i === 0 && !isMismatch ? "checked" : ""} />
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:2px;">${typeLabel}</div>
+          <div style="font-size:13px;font-weight:600;">${pm.bankName || "-"}</div>
+          <div style="font-size:12px;color:var(--muted);">${pm.accountName || ""} · <span class="mono">${pm.accountNumber || ""}</span></div>
+          ${mismatchMsg}
+        </div>
+      </label>`;
+    }).join("");
+
+    // 통화 일치하는 첫 번째 계좌 자동 선택
+    const firstMatch = sorted.find(p => !requiredType || p.type === requiredType);
+    if (firstMatch) {
+      const radio = document.querySelector(`input[name="bankChoice"][value="${firstMatch.id}"]`);
+      if (radio) radio.checked = true;
+      onBankChoiceChange(firstMatch.id, firstMatch);
+      const card = $("bankCard_" + firstMatch.id);
+      if (card) card.style.borderColor = "#f97316";
+    } else {
+      // 일치하는 계좌 없음 → 새로 입력 자동 선택
+      const r = $("radioNewBank"); if (r) r.checked = true;
+      showNewBankForm(true);
+    }
+    if (firstMatch) showNewBankForm(false);
+
+    // radioNewBank 클릭 시 새 입력 폼 표시
+    const radioNew = $("radioNewBank");
+    if (radioNew) radioNew.addEventListener("change", () => { showNewBankForm(true); clearBankFields(); });
+
+    // window에 lookup 함수 등록 (inline onchange 용)
+    window._savedBankMap = Object.fromEntries(sorted.map(p => [p.id, p]));
+
+  } catch (e) {
+    list.innerHTML = `<div style="font-size:12px;color:#ef4444;">계좌 로드 실패: ${e.message}</div>`;
+    showNewBankForm(true);
+  }
+}
+
+function showNewBankForm(show) {
+  const f = $("newBankForm");
+  if (f) f.style.display = show ? "block" : "none";
+}
+function clearBankFields() {
+  [$("sellerBankName"), $("sellerAccountName"), $("sellerAccountNumber")]
+    .forEach(el => { if (el) el.value = ""; });
+}
+window.onBankChoiceChange = function(pmId, pmObj) {
+  // 저장된 계좌 선택 시 hidden 필드에 값 세팅 (doSellerAccept에서 읽음)
+  const pm = pmObj || window._savedBankMap?.[pmId];
+  if (!pm) return;
+  const bn = $("sellerBankName");
+  const an = $("sellerAccountName");
+  const ac = $("sellerAccountNumber");
+  if (bn) bn.value = pm.bankName || "";
+  if (an) an.value = pm.accountName || "";
+  if (ac) ac.value = pm.accountNumber || "";
+  showNewBankForm(false);
+  // 테두리 강조 업데이트
+  document.querySelectorAll("label[id^='bankCard_']").forEach(el => {
+    el.style.borderColor = el.id === "bankCard_" + pmId ? "#f97316" : "var(--line)";
+  });
+};
 
 // ── Accept form: 수량 입력 + 총액 계산 ────────────────────────────────────────
 function initAcceptForm(ad) {
@@ -648,9 +928,15 @@ async function loadSellTrade(tradeId) {
   // Firestore
   const snap = await getDoc(doc(db, "ads", String(tradeId)));
   if (!snap.exists()) {
-    // Try legacy
-    setNote("광고 정보를 찾을 수 없습니다 (tradeId: " + tradeId + ")", true);
-    adData = { type:"SELL", seller:null, amount:0, unitPrice:0, fiat:"KRW" };
+    // BUY 광고에서 파생된 거래는 ads/{adId}에 저장되므로 orders에서 adId 조회
+    const orderSnap = await getDoc(doc(db, "orders", String(tradeId)));
+    if (orderSnap.exists() && orderSnap.data().adId) {
+      const buyAdSnap = await getDoc(doc(db, "ads", String(orderSnap.data().adId)));
+      adData = buyAdSnap.exists() ? { ...buyAdSnap.data(), docId: buyAdSnap.id } : orderSnap.data();
+    } else {
+      setNote("광고 정보를 찾을 수 없습니다 (tradeId: " + tradeId + ")", true);
+      adData = { type:"SELL", seller:null, amount:0, unitPrice:0, fiat:"KRW" };
+    }
   } else {
     adData = snap.data();
   }
@@ -668,7 +954,7 @@ async function loadSellTrade(tradeId) {
     on = null;
   }
 
-  const chainSt = on ? Number(on.status ?? on[9] ?? 0) : 0;
+  const chainSt = on ? Number(on.status ?? on[11] ?? 0) : 0;
 
   // Merge on-chain data into adData
   if (on) {
@@ -712,7 +998,9 @@ async function loadSellTrade(tradeId) {
     stopTimer();
   }
 
-  await loadSellerSns(adData.seller);
+  // BUY 광고는 광고등록자 = buyer, SELL 광고는 광고등록자 = seller
+  const adPosterAddr = adData.type === "BUY" ? adData.buyer : adData.seller;
+  await loadSellerSns(adPosterAddr, adData.type === "BUY");
   subscribeMessages(orderId, activeAccount());
   dbg("SELL ad loaded. chainSt=" + chainSt);
 }
@@ -758,7 +1046,7 @@ async function loadBuyAd(adId) {
     }
   }
 
-  await loadSellerSns(adData.buyer); // for BUY ad, show buyer's SNS
+  await loadSellerSns(adData.buyer, true); // BUY 광고: 광고등록자 = buyer
   subscribeMessages(orderId, activeAccount());
   dbg("BUY ad loaded. docId=" + adId);
 }
@@ -872,25 +1160,77 @@ async function doSellerAccept() {
     if (!newTradeId) throw new Error("tradeId를 못 찾았습니다. ABI 확인 필요");
     dbg("BUY→tradeId=" + newTradeId);
 
-    // 3. Update ad doc: now has tradeId + seller
+    // Seller bank info (where buyer sends VND)
+    const sellerBank = {
+      bankName:      ($("sellerBankName")?.value || "").trim(),
+      accountName:   ($("sellerAccountName")?.value || "").trim(),
+      accountNumber: ($("sellerAccountNumber")?.value || "").trim(),
+    };
+    if (!sellerBank.accountNumber)
+      throw new Error("입금받을 계좌번호를 입력해 주세요.");
+    if (!sellerBank.bankName)
+      throw new Error("은행명을 입력해 주세요.");
+    if (!sellerBank.accountName)
+      throw new Error("예금주 이름을 입력해 주세요.");
+
+    // 통화와 계좌 국가 일치 검증
+    const fiatStr_ = (adData?.fiat ?? "").toString();
+    const isVND_   = fiatStr_ === "1" || fiatStr_ === "VND";
+    const isKRW_   = fiatStr_ === "0" || fiatStr_ === "KRW";
+
+    const selectedRadio = document.querySelector("input[name='bankChoice']:checked");
+    const selectedPmId  = selectedRadio?.value;
+    const selectedPm    = window._savedBankMap?.[selectedPmId];
+
+    if (isVND_ && selectedPm && selectedPm.type === "BANK_KR") {
+      throw new Error("❌ 이 광고는 베트남 VND 결제입니다.\n한국 계좌는 사용할 수 없습니다.\n베트남 은행 계좌를 선택하거나 입력해 주세요.");
+    }
+    if (isKRW_ && selectedPm && selectedPm.type === "BANK_VN") {
+      throw new Error("❌ 이 광고는 한국 KRW 결제입니다.\n베트남 계좌는 사용할 수 없습니다.\n한국 은행 계좌를 선택하거나 입력해 주세요.");
+    }
+
+    // 새로 입력한 경우 저장 여부 확인
+    const isNewBank  = $("radioNewBank")?.checked;
+    const shouldSave = isNewBank && $("saveNewBank")?.checked;
+    if (shouldSave && sellerBank.accountNumber) {
+      const fiat_ = adData?.fiat?.toString();
+      const pmType = (fiat_ === "1" || fiat_ === "VND") ? "BANK_VN" : "BANK_KR";
+      await addDoc(collection(db, "payment_methods"), {
+        user:          me.toLowerCase(),
+        type:          pmType,
+        bankName:      sellerBank.bankName,
+        accountName:   sellerBank.accountName,
+        accountNumber: sellerBank.accountNumber,
+        createdAt:     serverTimestamp(),
+      }).catch(() => {}); // 저장 실패해도 거래는 진행
+    }
+
+    // 3. Update ad doc: tradeId + seller + sellerBank + takenAmount/takenFiat
+    // BUY 광고는 status를 OPEN으로 유지 — 부분 체결 후에도 목록에 계속 표시됨
+    // (tradeId 필드로 진행 중 여부 판단, 완전 체결 시에만 COMPLETED로 변경)
     await updateDoc(doc(db, "ads", adIdParam), {
-      tradeId: newTradeId,
-      seller:  me.toLowerCase(),
-      status:  "TAKEN",
-      updatedAt: serverTimestamp(),
+      tradeId:     newTradeId,
+      seller:      me.toLowerCase(),
+      sellerBank,
+      takenAmount: amount,
+      takenFiat:   fiatAmt,
+      updatedAt:   serverTimestamp(),
     });
 
     // 4. Create order doc
     await setDoc(doc(db, "orders", String(newTradeId)), {
-      tradeId:    newTradeId,
-      adId:       adIdParam,
-      type:       "BUY",
-      seller:     me.toLowerCase(),
-      buyer:      buyerAddr.toLowerCase(),
-      status:     "TAKEN",
-      escrowedAt: serverTimestamp(),
-      createdAt:  serverTimestamp(),
-      updatedAt:  serverTimestamp(),
+      tradeId:     newTradeId,
+      adId:        adIdParam,
+      type:        "BUY",
+      seller:      me.toLowerCase(),
+      buyer:       buyerAddr.toLowerCase(),
+      status:      "TAKEN",
+      sellerBank,
+      takenAmount: amount,
+      takenFiat:   fiatAmt,
+      escrowedAt:  serverTimestamp(),
+      createdAt:   serverTimestamp(),
+      updatedAt:   serverTimestamp(),
     });
 
     setNote("판매 신청 완료! 거래가 시작됩니다.");
@@ -963,11 +1303,81 @@ async function doRelease() {
       updateTradeStats(adData?.buyer,  true),
     ]);
 
-    setNote("토큰 이체 완료! 거래가 완료되었습니다. 🎉");
-    await loadTrade();
+    // ── 부분 체결 감지 ──────────────────────────────────────────────────────
+    const dec_      = CONFIG.TOKENS?.HEX?.decimals ?? 18;
+    const buyRaw    = chainData?.buyAmount ?? chainData?.[3] ?? 0n;
+    const filledHex = Number(ethers.formatUnits(BigInt(buyRaw.toString()), dec_));
+    const origAmt   = Number(adData?.originalAmount || adData?.amount || 0);
+    const remaining = Math.max(0, origAmt - filledHex);
+    const isBuyAd   = adData?.type === "BUY";
+
+    if (remaining > 0) {
+      // BUY 광고: 구매자(광고등록자)인 경우에만 모달 표시
+      // SELL 광고: 판매자에게 모달 표시
+      const me = (activeAccount() || "").toLowerCase();
+      const ownerL = isBuyAd
+        ? (adData?.buyer  || "").toLowerCase()
+        : (adData?.seller || "").toLowerCase();
+      const isOwner = me && me === ownerL;
+
+      if (isOwner) {
+        showPartialModal(filledHex, remaining, isBuyAd,
+          // 계속 진행
+          async () => {
+            const adDocId_ = adData?.docId || (isBuyAd ? adIdParam : tradeIdParam) || adIdParam;
+            if (adDocId_) {
+              const updatePayload = {
+                status:         "OPEN",
+                amount:         remaining,
+                originalAmount: origAmt,   // 원래 수량 보존
+                updatedAt:      serverTimestamp(),
+              };
+              if (isBuyAd) {
+                // BUY 광고: 다음 판매자를 받을 수 있도록 tradeId/seller 리셋
+                updatePayload.tradeId = null;
+                updatePayload.seller  = null;
+              }
+              await updateDoc(doc(db, "ads", String(adDocId_)), updatePayload).catch(() => {});
+            }
+            setNote(`잔여 ${fmtNum(remaining)} HEX로 광고가 계속 진행됩니다.`);
+            location.href = isBuyAd ? `/trade.html?adId=${adData?.docId || adIdParam}&type=BUY` : "/sell.html";
+          },
+          // 광고 종료
+          async () => {
+            const adDocId_ = adData?.docId || (isBuyAd ? adIdParam : tradeIdParam) || adIdParam;
+            if (adDocId_) await updateDoc(doc(db, "ads", String(adDocId_)), { status: "COMPLETED", updatedAt: serverTimestamp() }).catch(() => {});
+            location.href = "/sell.html";
+          }
+        );
+        return; // 모달이 처리하므로 여기서 종료
+      }
+    }
+
+    // 재등록 URL 빌드 (같은 조건)
+    const reUrl = buildReregisterUrl(adData);
+    showCancelModal(
+      "거래가 완료되었습니다! 🎉",
+      `HEX가 구매자에게 이체되었습니다.<br><br>
+       <a href="${reUrl}" style="display:inline-block; margin-top:4px; padding:10px 20px; background:var(--primary); color:#fff; border-radius:8px; font-weight:700; text-decoration:none;">
+         🔁 같은 조건으로 재등록
+       </a>
+       <div style="font-size:12px; color:var(--muted); margin-top:8px;">확인을 누르면 내 거래 목록으로 이동합니다.</div>`,
+      () => { location.href = "/my-trades.html"; }
+    );
   } catch (e) {
     console.error(e);
-    setNote(e?.shortMessage || e?.message || String(e), true);
+    // 0x5c975bda = HexBankNotSet() — 컨트랙트에 수수료 수신 주소 미설정
+    const errData = e?.data || e?.info?.error?.data || "";
+    if (String(errData).includes("5c975bda") || String(e?.message || "").includes("5c975bda")) {
+      setNote(
+        `⚠️ <strong>컨트랙트 설정 오류: 수수료 수신 주소(hexBank)가 미설정</strong><br>
+         관리자가 <a href="/admin.html" style="color:#f97316;font-weight:700;">admin 페이지</a>에서
+         hexBank 주소를 설정하거나, 수수료를 <strong>0%로 임시 설정</strong>하면 즉시 처리 가능합니다.`,
+        true
+      );
+    } else {
+      setNote(e?.shortMessage || e?.message || String(e), true);
+    }
   }
 }
 
@@ -993,8 +1403,11 @@ async function doCancel() {
     // Update trade stats: seller +1 total only (not completed)
     await updateTradeStats(adData?.seller, false);
 
-    setNote("거래가 취소되었습니다.");
-    await loadTrade();
+    showCancelModal(
+      "거래가 취소되었습니다",
+      "에스크로된 HEX가 지갑으로 반환되었습니다.",
+      () => { location.href = "/sell.html"; }
+    );
   } catch (e) {
     console.error(e);
     setNote(e?.shortMessage || e?.message || String(e), true);
@@ -1010,8 +1423,11 @@ async function doCleanupGhost() {
     await updateDoc(doc(db, "ads", String(adDocId)), {
       status: "CANCELED", cancelReason: "ghost_no_onchain", updatedAt: serverTimestamp(),
     });
-    setNote("광고가 삭제되었습니다. 광고등록 페이지에서 다시 등록해주세요.");
-    setTimeout(() => { location.href = "/sell.html"; }, 2000);
+    showCancelModal(
+      "광고가 삭제되었습니다",
+      "블록체인 미등록 광고가 삭제되었습니다.\n광고등록 페이지에서 다시 등록할 수 있습니다.",
+      () => { location.href = "/sell.html"; }
+    );
   } catch (e) {
     setNote(e?.message || String(e), true);
   }
@@ -1073,10 +1489,52 @@ async function doCancelBuyAd() {
       status:    "CANCELED",
       updatedAt: serverTimestamp(),
     });
-    setNote("광고가 취소되었습니다.");
-    await loadTrade();
+    showCancelModal(
+      "광고가 취소되었습니다",
+      "구매 광고가 성공적으로 취소되었습니다.",
+      () => { location.href = "/sell.html"; }
+    );
   } catch (e) {
     setNote(e?.message || String(e), true);
+  }
+}
+
+// BUY ad: designated buyer confirms → acceptTrade → TAKEN
+async function doBuyerConfirm() {
+  setNote("");
+  if (!activeAccount()) await connectWallet();
+  const tradeId = Number(tradeIdParam || adData?.tradeId);
+  if (!tradeId) return setNote("거래 ID를 찾을 수 없습니다.", true);
+
+  // buyAmount = on-chain amount (already set by seller in openTrade)
+  const dec = CONFIG.TOKENS?.HEX?.decimals ?? 18;
+  const rawAmount = chainData?.amount ?? chainData?.[2] ?? 0n;
+  const buyAmtWei = BigInt(rawAmount.toString());
+  if (!buyAmtWei) return setNote("거래 수량을 확인할 수 없습니다.", true);
+
+  try {
+    if (window.jumpWallet) {
+      setNote("거래 수락(acceptTrade) 전송 중 (Jump)…");
+      await jumpSendTx(CONFIG.CONTRACT.vetEX, ABI, "acceptTrade", [tradeId, buyAmtWei.toString()]);
+    } else {
+      const c  = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, signer);
+      setNote("거래 수락(acceptTrade) 전송 중…");
+      const tx = await c.acceptTrade(tradeId, buyAmtWei);
+      await tx.wait();
+    }
+    // Update Firestore
+    const adDocId = adData?.docId || adIdParam;
+    if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), {
+      status: "TAKEN", updatedAt: serverTimestamp(),
+    }).catch(() => {});
+    if (orderId) await updateDoc(doc(db, "orders", String(orderId)), {
+      status: "TAKEN", updatedAt: serverTimestamp(),
+    }).catch(() => {});
+    setNote("거래 수락 완료! 판매자 계좌로 입금 후 '입금 완료'를 눌러주세요.");
+    await loadTrade();
+  } catch (e) {
+    console.error(e);
+    setNote(e?.shortMessage || e?.message || String(e), true);
   }
 }
 
@@ -1128,8 +1586,11 @@ async function doCancelOpen() {
     }
     const adDocId = tradeIdParam || adIdParam;
     if (adDocId) await updateDoc(doc(db, "ads", String(adDocId)), { status: "CANCELED", updatedAt: serverTimestamp() });
-    setNote("광고가 취소되었습니다. 에스크로된 HEX가 반환되었습니다. ✅");
-    await loadTrade();
+    showCancelModal(
+      "광고가 취소되었습니다",
+      "에스크로된 HEX가 지갑으로 반환되었습니다.",
+      () => { location.href = "/sell.html"; }
+    );
   } catch (e) {
     console.error(e);
     setNote(e?.shortMessage || e?.message || String(e), true);
@@ -1165,15 +1626,16 @@ $("btnConnect")?.addEventListener("click", async () => {
     await connectWallet();
     if (adData) {
       renderRoleBadge(adData, activeAccount());
-      const chainSt = chainData ? Number(chainData.status ?? chainData[9] ?? 0) : -1;
+      const chainSt = chainData ? Number(chainData.status ?? chainData[11] ?? 0) : -1;
       renderActions(adData, chainSt);
       subscribeMessages(orderId, activeAccount());
     }
   } catch (e) { setNote(e.message, true); }
 });
 
-$("btnAccept")?.addEventListener("click",       doAccept);
-$("btnSellerAccept")?.addEventListener("click", doSellerAccept);
+$("btnAccept")?.addEventListener("click",        doAccept);
+$("btnSellerAccept")?.addEventListener("click",  doSellerAccept);
+$("btnBuyerConfirm")?.addEventListener("click",  doBuyerConfirm);
 $("btnPaid")?.addEventListener("click",         doPaid);
 $("btnRelease")?.addEventListener("click",      doRelease);
 $("btnCancelOpen")?.addEventListener("click",   doCancelOpen);
@@ -1186,41 +1648,40 @@ $("btnDispute")?.addEventListener("click",        doDispute);
 $("btnSendMsg")?.addEventListener("click",      () => sendMessage(orderId));
 $("chatInput")?.addEventListener("keydown",     e => { if (e.key === "Enter") sendMessage(orderId); });
 
-// Jump auto-connect
-window.addEventListener("jump:connected", async (e) => {
-  if (!account && e.detail?.address) {
-    account = e.detail.address;
-    $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
-    $("btnConnect").textContent = "연결됨";
-    $("btnConnect").disabled    = true;
-    if (adData) {
-      renderRoleBadge(adData, account);
-      const chainSt = chainData ? Number(chainData.status ?? chainData[9] ?? 0) : -1;
-      renderActions(adData, chainSt);
-      subscribeMessages(orderId, account);
-    }
-  }
-});
-
-// Auto-connect
-if (window.jumpWallet?.address) {
-  account = window.jumpWallet.address;
-  $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
-  $("btnConnect").textContent = "연결됨";
-  $("btnConnect").disabled    = true;
-} else if (window.ethereum) {
-  try {
-    const accs = await window.ethereum.request({ method: "eth_accounts" });
-    if (accs.length) {
+// ── 통합 지갑 자동 연결 ──────────────────────────────────────────────────────
+async function _onTradeWalletConnected(addr, type) {
+  if (!addr || account) return;
+  const isJump = type === 'jump' || !!window.jumpWallet;
+  if (!isJump && window.ethereum) {
+    try {
       provider = new ethers.BrowserProvider(window.ethereum);
       signer   = await provider.getSigner();
-      account  = await signer.getAddress();
-      $("walletAddr").textContent = "🦊 " + account.slice(0,6) + "…" + account.slice(-4);
-      $("btnConnect").textContent = "연결됨";
-      $("btnConnect").disabled    = true;
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
+  account = isJump ? window.jumpWallet?.address || addr : addr;
+  const tag = isJump ? "📧 " : "🦊 ";
+  $("walletAddr").textContent = tag + account.slice(0,6) + "…" + account.slice(-4);
+  $("btnConnect").textContent = "연결됨";
+  $("btnConnect").disabled    = true;
+  if (adData) {
+    renderRoleBadge(adData, account);
+    const chainSt = chainData ? Number(chainData.status ?? chainData[11] ?? 0) : -1;
+    renderActions(adData, chainSt);
+    subscribeMessages(orderId, account);
+  }
 }
+
+// 헤더 지갑이 이미 복원된 경우
+const _initAddr = window.__hdrWallet?.address || window.jumpWallet?.address;
+if (_initAddr) {
+  const _type = window.jumpWallet ? 'jump' : 'metamask';
+  _onTradeWalletConnected(_initAddr, _type);
+}
+// 비동기 복원 이벤트 수신
+window.addEventListener('wallet:connected', e => _onTradeWalletConnected(e.detail?.address, e.detail?.type));
+window.addEventListener('jump:connected',   e => _onTradeWalletConnected(e.detail?.address, 'jump'));
+// 페이지 버튼 → 헤더 지갑에 위임
+$("btnConnect")?.addEventListener("click", () => window.__hdrWallet?.connect());
 
 await loadTrade();
 dbg("trade.js ready");

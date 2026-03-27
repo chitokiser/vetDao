@@ -77,34 +77,77 @@ async function getContract() {
   return new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, s);
 }
 
+function setNote2(id, msg, isErr = false) {
+  const el = $(id);
+  if (!el) return;
+  el.style.display = msg ? "block" : "none";
+  el.textContent   = msg || "";
+  el.style.borderLeft = isErr ? "3px solid var(--danger)" : "3px solid var(--primary)";
+  el.style.color = isErr ? "var(--danger)" : "";
+}
+
 // ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   setNote("");
   try {
     const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
     const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
-    const pending = await c.pendingHexFee();
-    const el = $("pendingRaw");
-    if (el) el.textContent = pending.toString();
+
+    const [pending, total, hexBank, feeBps] = await Promise.all([
+      c.pendingHexFee(),
+      c.totalHexFeeCollected(),
+      c.hexBank(),
+      c.feeBps(),
+    ]);
+
+    if ($("pendingRaw"))  $("pendingRaw").textContent  = pending.toString();
+    if ($("totalFeeVal")) $("totalFeeVal").textContent = total.toString();
+    if ($("feeBpsVal"))   $("feeBpsVal").textContent   = feeBps.toString() + " (" + (Number(feeBps) / 100).toFixed(2) + "%)";
+    if ($("hexBankVal"))  $("hexBankVal").textContent  = hexBank || "(미설정)";
+
+    const isUnset = !hexBank || hexBank === "0x0000000000000000000000000000000000000000";
+    if ($("hexBankWarn")) $("hexBankWarn").style.display = isUnset ? "block" : "none";
+
     if (!$("toAddr").value && account) $("toAddr").value = account;
+    if (!$("newHexBank").value && account) $("newHexBank").value = account;
   } catch (e) {
     setNote("조회 실패: " + (e?.message || String(e)), true);
   }
 }
 
-// ── Withdraw ──────────────────────────────────────────────────────────────────
+// ── Set hexBank ───────────────────────────────────────────────────────────────
+async function doSetHexBank() {
+  setNote2("noteHexBank", "");
+  const addr = ($("newHexBank")?.value || "").trim();
+  if (!ethers.isAddress(addr)) { setNote2("noteHexBank", "유효한 주소를 입력하세요.", true); return; }
+  try {
+    const c  = await getContract();
+    setNote2("noteHexBank", "트랜잭션 전송 중…");
+    const tx = await c.setHexBank(addr);
+    setNote2("noteHexBank", "전송됨: " + tx.hash);
+    await tx.wait();
+    await refresh();
+    setNote2("noteHexBank", "hexBank 설정 완료 ✔ → " + addr);
+  } catch (e) {
+    setNote2("noteHexBank", e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
+// ── Withdraw (flushFeeNow) ─────────────────────────────────────────────────────
 async function withdrawAll() {
   setNote("");
   try {
     const to = ($("toAddr")?.value || "").trim();
     if (!ethers.isAddress(to)) { setNote("출금 주소가 올바르지 않습니다.", true); return; }
 
-    const c       = await getContract();
-    const pending = await c.pendingHexFee();
+    const rpc     = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+    const cRpc    = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
+    const pending = await cRpc.pendingHexFee();
     if (pending === 0n) { setNote("pendingHexFee가 0 입니다.", true); return; }
 
+    const c = await getContract();
     setNote("트랜잭션 전송 중…");
-    const tx = await c.withdrawHexFee(to, pending);
+    const tx = await c.flushFeeNow(to);
     setNote("전송됨: " + tx.hash);
     await tx.wait();
     await refresh();
@@ -114,9 +157,28 @@ async function withdrawAll() {
   }
 }
 
+// ── Set feeBps (긴급 수수료 변경) ─────────────────────────────────────────────
+async function doSetFeeBps(bps) {
+  setNote2("noteFee", "");
+  try {
+    const c  = await getContract();
+    setNote2("noteFee", `feeBps = ${bps} 전송 중…`);
+    const tx = await c.setFeeBps(bps);
+    setNote2("noteFee", "전송됨: " + tx.hash);
+    await tx.wait();
+    await refresh();
+    setNote2("noteFee", `수수료 ${bps === 0 ? "0% (긴급 설정)" : (bps / 100).toFixed(2) + "%"} 완료 ✔`);
+  } catch (e) {
+    setNote2("noteFee", e?.shortMessage || e?.message || String(e), true);
+  }
+}
+
 // ── Button bindings ───────────────────────────────────────────────────────────
 $("btnRefresh")?.addEventListener("click",     () => refresh());
+$("btnSetHexBank")?.addEventListener("click",  () => doSetHexBank());
 $("btnWithdrawAll")?.addEventListener("click", () => withdrawAll());
+$("btnSetFee0")?.addEventListener("click",     () => doSetFeeBps(0));
+$("btnSetFee50")?.addEventListener("click",    () => doSetFeeBps(50));
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 checkAdmin();

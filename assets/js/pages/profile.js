@@ -67,37 +67,19 @@ async function saveToFirestore() {
   }
 }
 
-// ── Wallet connect ────────────────────────────────────────────────────────────
-async function connectWallet() {
-  try {
-    if (window.jumpWallet?.address) { onWalletConnected(window.jumpWallet.address); return; }
-    if (!window.ethereum) throw new Error("구글 로그인(헤더) 또는 MetaMask 설치가 필요합니다.");
-    if (window.__hdrWallet?.connect) await window.__hdrWallet.connect();
-    const provider = new window.ethers.BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    const signer = await provider.getSigner();
-    onWalletConnected(await signer.getAddress());
-  } catch (e) {
-    showNote("지갑 연결 실패: " + e.message, true);
-  }
-}
-
 // ── Bindings ──────────────────────────────────────────────────────────────────
-$("btnConnect")?.addEventListener("click", connectWallet);
-$("btnLoad")?.addEventListener("click",    loadFromFirestore);
-$("btnSave")?.addEventListener("click",    saveToFirestore);
+$("btnLoad")?.addEventListener("click", loadFromFirestore);
+$("btnSave")?.addEventListener("click", saveToFirestore);
 
-// Jump: 헤더에서 Google 로그인 완료 시
-window.addEventListener("jump:connected", (e) => {
-  if (!userAddress && e.detail?.address) onWalletConnected(e.detail.address);
-});
-
-// Auto-connect
-if (window.jumpWallet?.address) {
-  onWalletConnected(window.jumpWallet.address);
-} else if (window.ethereum) {
-  try {
-    const accs = await window.ethereum.request({ method: "eth_accounts" });
-    if (accs.length) onWalletConnected(accs[0]);
-  } catch (_) {}
+// ── 통합 지갑 자동 연결 ──────────────────────────────────────────────────────
+function _tryConnect(addr) {
+  if (!addr || userAddress) return;
+  onWalletConnected(addr);
 }
+// 헤더 지갑이 이미 복원된 경우
+_tryConnect(window.__hdrWallet?.address || window.jumpWallet?.address);
+// 비동기 복원 이벤트 (MetaMask / Jump 모두 수신)
+window.addEventListener('wallet:connected', e => _tryConnect(e.detail?.address));
+window.addEventListener('jump:connected',   e => _tryConnect(e.detail?.address));
+// 페이지 버튼 → 헤더 지갑에 위임
+$("btnConnect")?.addEventListener("click", () => window.__hdrWallet?.connect());

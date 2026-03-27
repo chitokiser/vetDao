@@ -44,37 +44,104 @@
 
           <div class="hr"></div>
 
+          <!-- ── 컨트랙트 상태 ── -->
           <section class="panel" style="padding:16px; margin-bottom:14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
               <div>
-                <div class="block-title" style="font-size:18px;">수수료 출금</div>
-                <div class="muted" style="font-size:13px; margin-top:4px;">컨트랙트에 누적된 수수료를 전액 이체합니다.</div>
+                <div class="block-title" style="font-size:18px;">컨트랙트 상태</div>
+                <div class="muted" style="font-size:13px; margin-top:4px;">현재 컨트랙트 설정 및 수수료 현황</div>
               </div>
               <div class="pill" id="netPill">opBNB</div>
             </div>
 
             <div class="form-grid">
               <div>
-                <div class="k">pendingHexFee (raw)</div>
-                <div class="pill mono" id="pendingRaw" style="margin-top:6px;">-</div>
-                <div class="muted" style="font-size:11px; margin-top:4px;">HEX 최소단위(wei)</div>
-              </div>
-              <div>
                 <div class="k">내 지갑</div>
                 <div class="pill mono" id="myAddr" style="margin-top:6px;">-</div>
                 <div class="muted" style="font-size:11px; margin-top:4px;">owner 지갑으로 실행해야 성공</div>
               </div>
+              <div>
+                <div class="k">feeBps (수수료율)</div>
+                <div class="pill mono" id="feeBpsVal" style="margin-top:6px;">-</div>
+                <div class="muted" style="font-size:11px; margin-top:4px;">50 = 0.50%</div>
+              </div>
+              <div>
+                <div class="k">pendingHexFee (raw wei)</div>
+                <div class="pill mono" id="pendingRaw" style="margin-top:6px;">-</div>
+                <div class="muted" style="font-size:11px; margin-top:4px;">100 HEX(100e18) 이상 시 자동 flush</div>
+              </div>
+              <div>
+                <div class="k">totalHexFeeCollected (raw)</div>
+                <div class="pill mono" id="totalFeeVal" style="margin-top:6px;">-</div>
+              </div>
+              <div class="full">
+                <div class="k">hexBank (수수료 수신 주소)</div>
+                <div class="pill mono" id="hexBankVal" style="margin-top:6px; word-break:break-all;">-</div>
+                <div id="hexBankWarn" style="display:none; margin-top:6px; color:#ef4444; font-size:12px; font-weight:600;">
+                  ⚠ hexBank 미설정 — release() 실패 원인! 아래에서 반드시 설정하세요.
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end;">
+              <button class="btn secondary" id="btnRefresh">새로고침</button>
+            </div>
+          </section>
+
+          <!-- ── hexBank 설정 ── -->
+          <section class="panel" style="padding:16px; margin-bottom:14px; border:2px solid rgba(239,68,68,0.4);">
+            <div style="background:rgba(239,68,68,0.1); border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+              <div style="font-weight:700; color:#ef4444; font-size:14px;">🚨 hexBank 미설정 시 모든 release() 실패!</div>
+              <div style="font-size:12px; color:#fca5a5; margin-top:4px;">
+                hexBank를 설정하거나, 아래 <strong>긴급: 수수료 0% 설정</strong>으로 임시 우회하세요.
+              </div>
+            </div>
+            <div class="block-title" style="font-size:18px; margin-bottom:4px;">hexBank 설정</div>
+            <div class="muted" style="font-size:13px; margin-bottom:14px;">
+              수수료 자동 이체 주소를 설정합니다. 설정 즉시 거래 완료(release)가 정상 동작합니다.
+            </div>
+            <div class="form-grid">
+              <div class="full">
+                <div class="k">새 hexBank 주소</div>
+                <input class="input mono" id="newHexBank" placeholder="0x..." style="margin-top:6px;" />
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap;">
+              <button class="btn primary" id="btnSetHexBank">hexBank 저장</button>
+            </div>
+            <div class="note" id="noteHexBank" style="display:none; margin-top:12px; padding:10px 14px;"></div>
+
+            <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+              <div style="font-size:14px; font-weight:700; color:#fbbf24; margin-bottom:8px;">⚡ 긴급: 수수료 0% 임시 설정</div>
+              <div class="muted" style="font-size:12px; margin-bottom:10px;">
+                hexBank 설정 전까지 수수료를 0%로 설정하면 즉시 release() 가능합니다.<br>
+                (수수료 없이 거래 완료됨 — hexBank 설정 후 원래 수수료로 복원 필요)
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <button class="btn danger" id="btnSetFee0" style="background:rgba(234,179,8,0.2); border:1px solid #eab308; color:#eab308;">
+                  수수료 0% 설정 (긴급)
+                </button>
+                <button class="btn secondary" id="btnSetFee50" style="font-size:12px;">
+                  수수료 0.5% 복원
+                </button>
+              </div>
+              <div class="note" id="noteFee" style="display:none; margin-top:10px; padding:10px 14px;"></div>
+            </div>
+          </section>
+
+          <!-- ── 수수료 출금 ── -->
+          <section class="panel" style="padding:16px; margin-bottom:14px;">
+            <div class="block-title" style="font-size:18px; margin-bottom:4px;">수수료 강제 출금</div>
+            <div class="muted" style="font-size:13px; margin-bottom:14px;">pendingHexFee를 지정 주소로 즉시 이체합니다 (flushFeeNow).</div>
+            <div class="form-grid">
               <div class="full">
                 <div class="k">출금(이체) 주소</div>
                 <input class="input mono" id="toAddr" placeholder="0x..." style="margin-top:6px;" />
               </div>
             </div>
-
             <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end; flex-wrap:wrap;">
-              <button class="btn secondary" id="btnRefresh">새로고침</button>
-              <button class="btn danger"    id="btnWithdrawAll">수수료 전액 이체</button>
+              <button class="btn danger" id="btnWithdrawAll">수수료 전액 이체</button>
             </div>
-
             <div class="note" id="note" style="display:none; margin-top:12px; padding:10px 14px;"></div>
           </section>
 

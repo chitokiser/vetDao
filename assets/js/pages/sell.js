@@ -111,28 +111,14 @@ async function jumpSendTx(to, abiFragments, fnName, args) {
   return receipt;
 }
 
-// ── Wallet connect ────────────────────────────────────────────────────────────
+// ── Wallet connect (onSubmit에서 미연결 시 호출) ─────────────────────────────
 async function connectWallet() {
-  if (window.jumpWallet?.address) {
-    account = window.jumpWallet.address;
-    $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
-    $("btnConnect").textContent = "연결됨";
-    $("btnConnect").disabled    = true;
-    dbg("jump wallet: " + account);
-    await loadPaymentMethods(account);
-    return;
-  }
-  if (!window.ethereum) throw new Error("구글 로그인(헤더) 또는 MetaMask 설치가 필요합니다.");
-  if (window.__hdrWallet?.connect) await window.__hdrWallet.connect();
-  provider = new ethers.BrowserProvider(window.ethereum);
-  await provider.send("eth_requestAccounts", []);
-  signer  = await provider.getSigner();
-  account = await signer.getAddress();
-  $("walletAddr").textContent = "🦊 " + account.slice(0,6) + "…" + account.slice(-4);
-  $("btnConnect").textContent = "연결됨";
-  $("btnConnect").disabled    = true;
-  dbg("wallet: " + account);
-  await loadPaymentMethods(account);
+  if (account) return; // 이미 연결됨
+  await window.__hdrWallet?.connect(); // 헤더 지갑에 위임 (팝업 처리)
+  // 연결 완료 후 wallet:connected 이벤트가 onAccountConnected를 호출함
+  // 그래도 account가 없으면 즉시 시도
+  const addr = window.__hdrWallet?.address || window.jumpWallet?.address;
+  if (addr && !account) await onAccountConnected(addr);
 }
 
 // ── Load payment methods → render checkboxes ──────────────────────────────────
@@ -264,6 +250,7 @@ async function submitSell(addr, fiat, amount, unitPrice, fiatAmt, minFiat, maxFi
     seller:        addr.toLowerCase(),
     tokenSymbol:   "HEX",
     amount,
+    originalAmount: amount,   // 최초 등록 수량 (부분 체결 후에도 원본 보존)
     unitPrice,
     fiat,
     fiatAmount:    fiatAmt,
@@ -300,10 +287,11 @@ async function submitBuy(addr, fiat, amount, unitPrice, fiatAmt, minFiat, maxFia
   // 저장 (on-chain 없음 — 판매자가 acceptOffer 시 openTrade 호출)
   setNote("구매 광고 저장 중…");
   const ref = await addDoc(collection(db, "ads"), {
-    type:        "BUY",
-    buyer:       addr.toLowerCase(),
-    tokenSymbol: "HEX",
+    type:           "BUY",
+    buyer:          addr.toLowerCase(),
+    tokenSymbol:    "HEX",
     amount,
+    originalAmount: amount,   // 최초 등록 수량
     unitPrice,
     fiat,
     fiatAmount:  fiatAmt,
@@ -397,37 +385,78 @@ $("fiat")?.addEventListener("change",     updateTotal);
 
 updateTotal();
 
-// ── Jump: 헤더 Google 로그인 완료 시 자동 연결 ───────────────────────────────
-window.addEventListener("jump:connected", async (e) => {
-  if (!account && e.detail?.address) {
-    account = e.detail.address;
-    $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
-    $("btnConnect").textContent = "연결됨";
-    $("btnConnect").disabled    = true;
-    await loadPaymentMethods(account);
+// ── 통합 지갑 자동 연결 (헤더 지갑과 공유) ──────────────────────────────────
+async function onAccountConnected(addr) {
+  if (!addr || account) return;
+  const isJump = !!window.jumpWallet;
+  account = addr;
+  if (isJump) {
+    provider = null; signer = null;
+  } else if (window.ethereum) {
+    try {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer   = await provider.getSigner();
+    } catch (_) {}
   }
-});
-
-// ── Auto-connect if already authorized ───────────────────────────────────────
-if (window.jumpWallet?.address) {
-  account = window.jumpWallet.address;
-  $("walletAddr").textContent = "📧 " + account.slice(0,6) + "…" + account.slice(-4);
+  const tag = isJump ? "📧 " : "🦊 ";
+  $("walletAddr").textContent = tag + account.slice(0,6) + "…" + account.slice(-4);
   $("btnConnect").textContent = "연결됨";
   $("btnConnect").disabled    = true;
   await loadPaymentMethods(account);
-} else if (window.ethereum) {
-  try {
-    const accs = await window.ethereum.request({ method: "eth_accounts" });
-    if (accs.length) {
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer   = await provider.getSigner();
-      account  = await signer.getAddress();
-      $("walletAddr").textContent = "🦊 " + account.slice(0,6) + "…" + account.slice(-4);
-      $("btnConnect").textContent = "연결됨";
-      $("btnConnect").disabled    = true;
-      await loadPaymentMethods(account);
-    }
-  } catch (_) {}
 }
 
+// 헤더 지갑이 이미 복원된 경우
+const _initAddr = window.__hdrWallet?.address || window.jumpWallet?.address;
+if (_initAddr) {
+  onAccountConnected(_initAddr);
+}
+// 비동기 복원 이벤트 (MetaMask / Jump 모두 수신)
+window.addEventListener('wallet:connected', e => onAccountConnected(e.detail?.address));
+window.addEventListener('jump:connected',   e => onAccountConnected(e.detail?.address));
+// 페이지 버튼 → 헤더 지갑에 위임
+$("btnConnect")?.addEventListener("click", () => window.__hdrWallet?.connect());
+
 dbg("sell.js ready");
+
+// ── 재등록: URL 파라미터로 폼 미리 채우기 ────────────────────────────────────
+// 예: /sell.html?preset=1&type=BUY&fiat=VND&amount=100&unitPrice=27300&...
+(function prefillFromUrl() {
+  const p = new URLSearchParams(location.search);
+  if (!p.get("preset")) return;
+
+  const type = p.get("type") || "SELL";
+  switchAdType(type); // 광고 유형 전환 (버튼 UI 포함)
+
+  const fiatEl = $("fiat");
+  if (fiatEl && p.get("fiat") != null) {
+    fiatEl.value = p.get("fiat");
+  }
+  const setVal = (id, key) => {
+    const el = $(id);
+    if (el && p.get(key)) el.value = p.get(key);
+  };
+  setVal("amount",    "amount");
+  setVal("unitPrice", "unitPrice");
+  setVal("minFiat",   "minFiat");
+  setVal("maxFiat",   "maxFiat");
+  setVal("terms",     "terms");
+
+  const toEl = $("timeoutMin");
+  if (toEl && p.get("timeoutMin")) {
+    // select에서 가장 가까운 option 선택
+    const target = p.get("timeoutMin");
+    const opt = [...toEl.options].find(o => o.value === target);
+    if (opt) toEl.value = target;
+  }
+
+  updateTotal();
+
+  // 안내 배너 표시
+  const note = $("note");
+  if (note) {
+    note.style.display = "block";
+    note.style.borderLeft = "3px solid var(--primary)";
+    note.style.color = "";
+    note.innerHTML = "✅ 이전 거래와 같은 조건으로 미리 채워졌습니다. 수량을 확인 후 등록하세요.";
+  }
+})();

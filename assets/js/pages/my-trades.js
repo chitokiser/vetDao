@@ -67,7 +67,7 @@ async function overrideChainStatus(ad) {
     const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
     const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
     const on  = await c.getTrade(id);
-    const n   = Number(on.status ?? on[9] ?? 0);
+    const n   = Number(on.status ?? on[11] ?? 0);
     const map = ["OPEN","TAKEN","PAID","RELEASED","CANCELED","DISPUTED","RESOLVED"];
     ad._chainStatus = map[n] ?? "OPEN";
   } catch {}
@@ -106,7 +106,13 @@ function render(ads) {
     const status  = ad._chainStatus || ad.status || "OPEN";
     const meta    = statusMeta(status);
     const fiat    = fiatLabel(ad.fiat);
-    const amount  = fmtNum(ad.amount);
+    const origAmt   = ad.originalAmount || ad.amount;
+    const curAmt    = ad.amount;
+    const filledAmt = origAmt - curAmt;
+    const isPartial = origAmt > 0 && filledAmt > 0;
+    const amount    = isPartial
+      ? `${fmtNum(curAmt)} <span style="font-size:12px;color:var(--muted);">(원래 ${fmtNum(origAmt)}, 체결 ${fmtNum(filledAmt)})</span>`
+      : fmtNum(curAmt);
     const price   = fmtNum(ad.unitPrice);
     const total   = fmtNum(ad.fiatAmount || (ad.amount * ad.unitPrice));
     const partner = activeTab === "sell"
@@ -211,38 +217,15 @@ function onWalletConnected(addr) {
   subscribeAds(myAddr);
 }
 
-$("btnConnect")?.addEventListener("click", async () => {
-  try {
-    if (window.jumpWallet?.address) {
-      onWalletConnected(window.jumpWallet.address);
-    } else if (window.ethereum) {
-      const ethers_ = window.ethers;
-      if (window.__hdrWallet?.connect) await window.__hdrWallet.connect();
-      const p = new ethers_.BrowserProvider(window.ethereum);
-      await p.send("eth_requestAccounts", []);
-      const s = await p.getSigner();
-      onWalletConnected(await s.getAddress());
-    } else {
-      setNote("MetaMask 또는 구글 로그인이 필요합니다.", true);
-    }
-  } catch (e) { setNote(e.message, true); }
-});
-
-// Jump 자동 연결
-window.addEventListener("jump:connected", e => {
-  if (!myAddr && e.detail?.address) onWalletConnected(e.detail.address);
-});
-
-// 이미 연결된 경우 자동 로드
-if (window.jumpWallet?.address) {
-  onWalletConnected(window.jumpWallet.address);
-} else if (window.ethereum) {
-  try {
-    const accs = await window.ethereum.request({ method: "eth_accounts" });
-    if (accs.length) {
-      const p = new window.ethers.BrowserProvider(window.ethereum);
-      const s = await p.getSigner();
-      onWalletConnected(await s.getAddress());
-    }
-  } catch (_) {}
+// ── 통합 지갑 자동 연결 ──────────────────────────────────────────────────────
+function _tryConnect(addr) {
+  if (!addr || myAddr) return;
+  onWalletConnected(addr);
 }
+// 헤더 지갑이 이미 복원된 경우
+_tryConnect(window.__hdrWallet?.address || window.jumpWallet?.address);
+// 비동기 복원 이벤트 (MetaMask / Jump 모두 수신)
+window.addEventListener('wallet:connected', e => _tryConnect(e.detail?.address));
+window.addEventListener('jump:connected',   e => _tryConnect(e.detail?.address));
+// 페이지 버튼 → 헤더 지갑에 위임
+$("btnConnect")?.addEventListener("click", () => window.__hdrWallet?.connect());

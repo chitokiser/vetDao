@@ -15,7 +15,7 @@ const adList = document.getElementById("adList");
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allAds   = [];
-let fiatFilter = "KRW";
+let fiatFilter = "";
 let sortKey    = "price_asc";
 let activeTab  = "SELL"; // "SELL" = 구매 탭 (SELL ads), "BUY" = 판매 탭 (BUY ads)
 
@@ -171,14 +171,27 @@ function renderBuyAds(ads, statusMap) {
   }
 
   for (const ad of visible) {
-    const fiat     = fmtFiat(ad.fiat);
-    const adId     = ad.docId ?? "-";
-    const ownerRaw = (ad.buyer || "").toLowerCase();
-    const info     = statusMap[ownerRaw] ?? null;
+    const fiat       = fmtFiat(ad.fiat);
+    const adId       = ad.docId ?? "-";
+    const ownerRaw   = (ad.buyer || "").toLowerCase();
+    const info       = statusMap[ownerRaw] ?? null;
     const { cls, label } = onlineStatus(info?.lastSeen ?? null);
-    const initials = ownerRaw ? ownerRaw.slice(2,4).toUpperCase() : "??";
-    const minFiat  = ad.minFiat ? fmtNum(ad.minFiat) : "0";
-    const maxFiat  = ad.maxFiat ? fmtNum(ad.maxFiat) : fmtNum(ad.fiatAmount);
+    const initials   = ownerRaw ? ownerRaw.slice(2,4).toUpperCase() : "??";
+    const minFiat    = ad.minFiat ? fmtNum(ad.minFiat) : "0";
+    const maxFiat    = ad.maxFiat ? fmtNum(ad.maxFiat) : fmtNum(ad.fiatAmount);
+
+    // 거래 진행 중 여부 (판매자가 에스크로했지만 아직 완료되지 않음)
+    const inProgress = !!ad.tradeId;
+    // 부분 체결 여부
+    const origAmt  = ad.originalAmount || ad.amount;
+    const curAmt   = ad.amount;
+    const filled   = origAmt > curAmt ? origAmt - curAmt : 0;
+    const partialBadge = filled > 0
+      ? `<span style="font-size:10px;background:rgba(249,115,22,0.15);color:#f97316;padding:1px 6px;border-radius:4px;margin-left:4px;">부분체결 ${fmtNum(filled)}/${fmtNum(origAmt)}</span>`
+      : "";
+    const inProgressBadge = inProgress
+      ? `<span style="font-size:10px;background:rgba(234,179,8,0.15);color:#eab308;padding:1px 6px;border-radius:4px;margin-left:4px;">거래진행중</span>`
+      : "";
 
     const row = document.createElement("div");
     row.className = "p2p-row";
@@ -186,9 +199,10 @@ function renderBuyAds(ads, statusMap) {
       <div class="seller-col">
         <div class="seller-avatar" style="background:rgba(34,197,94,0.2);color:#22c55e;">${initials}</div>
         <div style="min-width:0;">
-          <div style="display:flex;align-items:center;gap:6px;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="seller-name mono">${shortAddr(ad.buyer)}</span>
             <span class="online-dot ${cls}" title="${label}"></span>
+            ${inProgressBadge}${partialBadge}
           </div>
           <div class="seller-meta">${label} · HEX${tradeStatsBadge(info)}</div>
         </div>
@@ -199,16 +213,19 @@ function renderBuyAds(ads, statusMap) {
       </div>
       <div>
         <div class="limits-avail">
-          <span class="muted" style="font-size:11px;">수량</span>
-          <strong style="margin-left:4px;">${fmtNum(ad.amount)} HEX</strong>
+          <span class="muted" style="font-size:11px;">잔여 수량</span>
+          <strong style="margin-left:4px;">${fmtNum(curAmt)} HEX</strong>
         </div>
         <div class="limits-range">${minFiat} – ${maxFiat} ${fiat}</div>
       </div>
       <div class="action-col">
-        <button class="buy-btn" style="background:#22c55e;"
-          onclick="location.href='/trade.html?adId=${encodeURIComponent(adId)}&type=BUY'">
-          판매
-        </button>
+        ${inProgress
+          ? `<button class="buy-btn" style="background:#64748b;cursor:not-allowed;" disabled title="현재 다른 판매자와 거래 중입니다. 완료 후 신청 가능합니다.">거래중</button>`
+          : `<button class="buy-btn" style="background:#22c55e;"
+               onclick="location.href='/trade.html?adId=${encodeURIComponent(adId)}&type=BUY'">
+               판매
+             </button>`
+        }
       </div>`;
     adList.appendChild(row);
   }
