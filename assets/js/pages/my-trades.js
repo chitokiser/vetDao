@@ -67,7 +67,7 @@ async function overrideChainStatus(ad) {
     const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
     const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
     const on  = await c.getTrade(id);
-    const n   = Number(on.status ?? on[11] ?? 0);
+    const n   = Number(on.status ?? on[10] ?? 0);
     const map = ["OPEN","TAKEN","PAID","RELEASED","CANCELED","DISPUTED","RESOLVED"];
     ad._chainStatus = map[n] ?? "OPEN";
   } catch {}

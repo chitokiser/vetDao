@@ -954,7 +954,7 @@ async function loadSellTrade(tradeId) {
     on = null;
   }
 
-  const chainSt = on ? Number(on.status ?? on[11] ?? 0) : 0;
+  const chainSt = on ? Number(on.status ?? on[10] ?? 0) : 0;
 
   // Merge on-chain data into adData
   if (on) {
@@ -1626,7 +1626,7 @@ $("btnConnect")?.addEventListener("click", async () => {
     await connectWallet();
     if (adData) {
       renderRoleBadge(adData, activeAccount());
-      const chainSt = chainData ? Number(chainData.status ?? chainData[11] ?? 0) : -1;
+      const chainSt = chainData ? Number(chainData.status ?? chainData[10] ?? 0) : -1;
       renderActions(adData, chainSt);
       subscribeMessages(orderId, activeAccount());
     }
@@ -1665,7 +1665,7 @@ async function _onTradeWalletConnected(addr, type) {
   $("btnConnect").disabled    = true;
   if (adData) {
     renderRoleBadge(adData, account);
-    const chainSt = chainData ? Number(chainData.status ?? chainData[11] ?? 0) : -1;
+    const chainSt = chainData ? Number(chainData.status ?? chainData[10] ?? 0) : -1;
     renderActions(adData, chainSt);
     subscribeMessages(orderId, account);
   }

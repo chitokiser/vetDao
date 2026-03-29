@@ -129,6 +129,29 @@
             </div>
           </section>
 
+          <!-- ── On-chain → Firestore 동기화 ── -->
+          <section class="panel" style="padding:16px; margin-bottom:14px;">
+            <div class="block-title" style="font-size:18px; margin-bottom:4px;">📡 On-chain → Firestore 광고 복구</div>
+            <div class="muted" style="font-size:13px; margin-bottom:14px;">
+              Firestore에 없는 on-chain SELL 광고를 찾아 ads 컬렉션에 등록합니다.<br>
+              tradeId 범위를 지정하세요.
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+              <div>
+                <div class="k" style="font-size:12px; margin-bottom:4px;">시작 tradeId</div>
+                <input class="input mono" id="syncFrom" value="1" style="width:100px;" />
+              </div>
+              <div>
+                <div class="k" style="font-size:12px; margin-bottom:4px;">끝 tradeId</div>
+                <input class="input mono" id="syncTo" value="10" style="width:100px;" />
+              </div>
+              <div style="align-self:flex-end;">
+                <button class="btn primary" id="btnSyncTrades">동기화 실행</button>
+              </div>
+            </div>
+            <div class="note" id="noteSync" style="display:none; margin-top:10px; padding:10px 14px; white-space:pre-line;"></div>
+          </section>
+
           <!-- ── 수수료 출금 ── -->
           <section class="panel" style="padding:16px; margin-bottom:14px;">
             <div class="block-title" style="font-size:18px; margin-bottom:4px;">수수료 강제 출금</div>

@@ -1,4 +1,6 @@
 // /assets/js/pages/admin.js
+await window.firebaseReady;
+
 const CONFIG = window.CONFIG;
 const ABI    = window.ABI;
 const ethers = window.ethers;
@@ -20,7 +22,7 @@ function checkAdmin() {
 }
 
 // Jump 로그인 완료 이벤트 수신
-window.addEventListener("jump:connected", (e) => {
+window.addEventListener("jump:connected", () => {
   checkAdmin();
 });
 
@@ -173,12 +175,103 @@ async function doSetFeeBps(bps) {
   }
 }
 
+// ── On-chain → Firestore 동기화 ──────────────────────────────────────────────
+async function syncTrades() {
+  const from = parseInt($("syncFrom")?.value || "1");
+  const to   = parseInt($("syncTo")?.value   || "10");
+  if (isNaN(from) || isNaN(to) || from < 1 || to < from) {
+    setNote2("noteSync", "tradeId 범위가 올바르지 않습니다.", true);
+    return;
+  }
+
+  setNote2("noteSync", `tradeId ${from}~${to} 조회 중…`);
+
+  const rpc = new ethers.JsonRpcProvider(CONFIG.RPC_URL);
+  const c   = new ethers.Contract(CONFIG.CONTRACT.vetEX, ABI, rpc);
+  const db  = window.db;
+
+  const { doc: fsDoc, getDoc: fsGetDoc, setDoc: fsSetDoc, serverTimestamp } =
+    await import("https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js");
+
+  const fiatLabel = { 0: "KRW", 1: "VND" };
+  const statusLabel = ["OPEN","TAKEN","PAID","RELEASED","CANCELED","DISPUTED","RESOLVED"];
+
+  let created = 0, skipped = 0, log = "";
+
+  for (let id = from; id <= to; id++) {
+    try {
+      const on = await c.getTrade(id);
+      const seller = on.seller?.toLowerCase();
+      if (!seller || seller === "0x0000000000000000000000000000000000000000") {
+        log += `#${id}: 거래 없음\n`;
+        continue;
+      }
+
+      const chainStatus = Number(on.status ?? on[10] ?? 0);
+      const fiat        = fiatLabel[Number(on.fiat ?? on[9] ?? 0)] ?? "KRW";
+      const amount      = Number(ethers.formatUnits(on.amount, 18));
+      const fiatAmount  = Number(on.fiatAmount ?? 0);
+
+      // Firestore 문서 존재 여부 확인
+      const ref  = fsDoc(db, "ads", String(id));
+      const snap = await fsGetDoc(ref);
+
+      if (snap.exists()) {
+        log += `#${id}: 이미 존재 (status=${snap.data()?.status})\n`;
+        skipped++;
+        continue;
+      }
+
+      // OPEN(0) 상태인 경우에만 복구
+      if (chainStatus !== 0) {
+        log += `#${id}: on-chain status=${statusLabel[chainStatus]||chainStatus} → 복구 생략\n`;
+        skipped++;
+        continue;
+      }
+
+      // Firestore에 기본 광고 문서 생성
+      await fsSetDoc(ref, {
+        type:           "SELL",
+        tradeId:        id,
+        seller,
+        tokenSymbol:    "HEX",
+        amount,
+        originalAmount: amount,
+        unitPrice:      fiatAmount > 0 ? Math.round(fiatAmount / amount) : 0,
+        fiat,
+        fiatAmount,
+        minFiat:        0,
+        maxFiat:        fiatAmount,
+        timeoutMin:     30,
+        terms:          null,
+        paymentMethodIds: [],
+        paymentMethods:   [],
+        contract:       (CONFIG.CONTRACT.vetEX || "").toLowerCase(),
+        txHash:         null,
+        blockNumber:    null,
+        status:         "OPEN",
+        createdAt:      serverTimestamp(),
+        updatedAt:      serverTimestamp(),
+        _recovered:     true,
+      });
+
+      log += `#${id}: ✅ 복구 완료 (${amount} HEX, ${fiat})\n`;
+      created++;
+    } catch (e) {
+      log += `#${id}: 오류 — ${e.message}\n`;
+    }
+  }
+
+  setNote2("noteSync", `완료 — 복구: ${created}건, 건너뜀: ${skipped}건\n\n${log}`);
+}
+
 // ── Button bindings ───────────────────────────────────────────────────────────
 $("btnRefresh")?.addEventListener("click",     () => refresh());
 $("btnSetHexBank")?.addEventListener("click",  () => doSetHexBank());
 $("btnWithdrawAll")?.addEventListener("click", () => withdrawAll());
 $("btnSetFee0")?.addEventListener("click",     () => doSetFeeBps(0));
 $("btnSetFee50")?.addEventListener("click",    () => doSetFeeBps(50));
+$("btnSyncTrades")?.addEventListener("click",  () => syncTrades());
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 checkAdmin();
